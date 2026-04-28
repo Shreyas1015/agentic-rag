@@ -39,6 +39,23 @@ def _get_bm25_model() -> SparseTextEmbedding:
     return _bm25_model
 
 
+async def embed_query_dense(text: str) -> list[float]:
+    """Single-string dense embedding via OpenRouter — used at query time
+    by both hybrid_search and the semantic cache."""
+    client = get_async_openai_client()
+    resp = await client.embeddings.create(
+        model=settings.EMBEDDING_MODEL, input=[text]
+    )
+    return resp.data[0].embedding
+
+
+def embed_query_sparse(text: str) -> tuple[list[int], list[float]]:
+    """Single-string BM25 sparse embedding via the local FastEmbed model."""
+    bm25 = _get_bm25_model()
+    sparse = next(iter(bm25.embed([text])))
+    return sparse.indices.tolist(), sparse.values.tolist()
+
+
 async def embed_chunks(
     children: list[ChildNode], *, dense_batch_size: int = DENSE_BATCH_SIZE
 ) -> list[EmbeddedChunk]:
