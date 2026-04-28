@@ -1,0 +1,1389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Agentic RAG — Build Guide & Code Architecture</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Space+Grotesk:wght@400;500;600;700&family=Unbounded:wght@700;800;900&display=swap');
+
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#030a0e;--s1:#050f14;--s2:#071318;--s3:#09191f;--s4:#0c2028;
+  --b1:#0f2d38;--b2:#164050;--b3:#1e5468;
+  --cyan:#00d4ff;--cdim:rgba(0,212,255,.07);--cmid:rgba(0,212,255,.18);
+  --teal:#00b896;--tdim:rgba(0,184,150,.07);--tmid:rgba(0,184,150,.18);
+  --blue:#3b82f6;--bdim:rgba(59,130,246,.08);--bmid:rgba(59,130,246,.18);
+  --purple:#a78bfa;--pdim:rgba(167,139,250,.07);--pmid:rgba(167,139,250,.18);
+  --gold:#f6a623;--gdim:rgba(246,166,35,.07);--gmid:rgba(246,166,35,.2);
+  --green:#22d3a0;--grdim:rgba(34,211,160,.07);--grmid:rgba(34,211,160,.18);
+  --red:#f16060;--rdim:rgba(241,96,96,.07);--rmid:rgba(241,96,96,.18);
+  --orange:#f97316;
+  --w:#e8f4f8;--g1:#b0cdd6;--g2:#6a9aaa;--g3:#3a6070;--g4:#143040;
+  --fh:'Unbounded',sans-serif;
+  --fm:'JetBrains Mono',monospace;
+  --fb:'Space Grotesk',sans-serif;
+  --nav:258px;
+}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--w);font-family:var(--fb);font-size:14px;line-height:1.75;display:flex;min-height:100vh}
+
+/* NAV */
+nav{width:var(--nav);min-height:100vh;background:var(--s1);border-right:1px solid var(--b1);position:fixed;top:0;left:0;overflow-y:auto;z-index:50;display:flex;flex-direction:column}
+nav::-webkit-scrollbar{width:3px}nav::-webkit-scrollbar-thumb{background:var(--b3)}
+.nb{padding:20px 16px 16px;border-bottom:1px solid var(--b1)}
+.nb-art{font-family:var(--fm);font-size:9px;font-weight:600;letter-spacing:3px;color:var(--cyan);text-transform:uppercase;margin-bottom:7px}
+.nb-title{font-size:13px;font-weight:700;color:var(--w);line-height:1.3;margin-bottom:3px;font-family:var(--fh)}
+.nb-sub{font-size:10px;color:var(--g3);line-height:1.5}
+.ng{padding:13px 16px 4px;font-size:9px;font-weight:600;letter-spacing:2px;color:var(--g4);text-transform:uppercase;font-family:var(--fm)}
+.na{display:flex;align-items:center;gap:8px;padding:7px 16px;color:var(--g2);font-size:11px;border-left:2px solid transparent;cursor:pointer;transition:all .15s;line-height:1.35;text-decoration:none}
+.na:hover{color:var(--w);background:var(--s2);border-left-color:var(--cyan)}
+.na.active{color:var(--cyan);background:var(--cdim);border-left-color:var(--cyan);font-weight:600}
+.nn{font-family:var(--fm);font-size:9px;color:var(--g4);min-width:16px}
+.na-pip{width:5px;height:5px;border-radius:50%;background:currentColor;opacity:.5;flex-shrink:0}
+.phase-badge{font-family:var(--fm);font-size:8px;font-weight:700;padding:1px 6px;border-radius:100px;margin-left:auto;flex-shrink:0}
+.pb-p1{background:var(--grdim);border:1px solid var(--grmid);color:var(--green)}
+.pb-p2{background:var(--cdim);border:1px solid var(--cmid);color:var(--cyan)}
+.pb-p3{background:var(--pdim);border:1px solid var(--pmid);color:var(--purple)}
+
+/* MAIN */
+main{margin-left:var(--nav);flex:1;min-width:0}
+
+/* HERO */
+.hero{padding:52px 50px 44px;border-bottom:1px solid var(--b1);position:relative;overflow:hidden;background:linear-gradient(160deg,var(--s1) 0%,var(--bg) 100%)}
+.hero::before{content:'';position:absolute;top:-120px;right:-80px;width:600px;height:600px;background:radial-gradient(circle,rgba(0,212,255,.06) 0%,transparent 60%);pointer-events:none}
+.hero::after{content:'';position:absolute;bottom:-80px;left:10%;width:400px;height:400px;background:radial-gradient(circle,rgba(34,211,160,.05) 0%,transparent 60%);pointer-events:none}
+.h-eyebrow{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+.h-art-num{font-family:var(--fm);font-size:9px;font-weight:700;letter-spacing:3px;color:var(--cyan);text-transform:uppercase;background:var(--cdim);border:1px solid var(--cmid);padding:4px 11px;border-radius:100px}
+.h-of{font-family:var(--fm);font-size:9px;color:var(--g3);letter-spacing:1px}
+.h-title{font-size:38px;font-weight:900;line-height:1.05;color:var(--w);margin-bottom:12px;font-family:var(--fh);letter-spacing:-1px}
+.h-title em{color:var(--cyan);font-style:normal}
+.h-sub{color:var(--g2);font-size:13px;margin-bottom:26px;max-width:660px;line-height:1.75}
+.chips{display:flex;flex-wrap:wrap;gap:7px}
+.chip{padding:4px 12px;border-radius:100px;font-size:10px;font-weight:600;border:1px solid;font-family:var(--fm)}
+.c-cy{background:var(--cdim);border-color:var(--cmid);color:var(--cyan)}
+.c-gr{background:var(--grdim);border-color:var(--grmid);color:var(--green)}
+.c-g{background:var(--gdim);border-color:var(--gmid);color:var(--gold)}
+.c-p{background:var(--pdim);border-color:var(--pmid);color:var(--purple)}
+.c-b{background:var(--bdim);border-color:var(--bmid);color:var(--blue)}
+
+/* STATS */
+.statsbar{display:grid;grid-template-columns:repeat(5,1fr);background:var(--s1);border-bottom:1px solid var(--b1)}
+.sb{padding:18px 14px;border-right:1px solid var(--b1);text-align:center}
+.sb:last-child{border-right:none}
+.sb-val{font-family:var(--fh);font-size:20px;font-weight:800;line-height:1;margin-bottom:5px}
+.sb-label{font-family:var(--fm);font-size:8.5px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:var(--g3)}
+.sv-cy{color:var(--cyan)}.sv-gr{color:var(--green)}.sv-g{color:var(--gold)}.sv-p{color:var(--purple)}.sv-b{color:var(--blue)}
+
+/* SECTIONS */
+section{padding:46px 50px;border-bottom:1px solid var(--b1);scroll-margin-top:16px}
+section:last-child{border-bottom:none;padding-bottom:80px}
+.sec-ey{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.sec-num{font-family:var(--fm);font-size:9px;font-weight:700;letter-spacing:2px;color:var(--cyan);background:var(--cdim);border:1px solid var(--cmid);padding:3px 10px;border-radius:6px;text-transform:uppercase}
+.sec-tag{font-family:var(--fm);font-size:9px;font-weight:600;letter-spacing:2px;color:var(--g3);text-transform:uppercase}
+.sec-title{font-size:26px;font-weight:800;color:var(--w);line-height:1.15;font-family:var(--fh);letter-spacing:-0.5px;margin-bottom:8px}
+.sec-title em{color:var(--cyan);font-style:normal}
+.sec-lead{color:var(--g2);font-size:13px;max-width:720px;line-height:1.75;margin-bottom:28px}
+
+/* PHASE CARDS */
+.phase-grid{display:grid;gap:16px}
+.phase-card{border-radius:14px;overflow:hidden;border:1px solid var(--b2)}
+.phase-head{padding:20px 24px;display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px}
+.ph-p1{background:linear-gradient(135deg,rgba(34,211,160,.08) 0%,var(--s2) 100%);border-bottom:1px solid rgba(34,211,160,.15)}
+.ph-p2{background:linear-gradient(135deg,rgba(0,212,255,.08) 0%,var(--s2) 100%);border-bottom:1px solid rgba(0,212,255,.15)}
+.ph-p3{background:linear-gradient(135deg,rgba(167,139,250,.08) 0%,var(--s2) 100%);border-bottom:1px solid rgba(167,139,250,.15)}
+.phase-num{font-family:var(--fh);font-size:11px;font-weight:900;letter-spacing:1px;margin-bottom:6px}
+.ph-p1 .phase-num{color:var(--green)}
+.ph-p2 .phase-num{color:var(--cyan)}
+.ph-p3 .phase-num{color:var(--purple)}
+.phase-title{font-size:17px;font-weight:700;color:var(--w);font-family:var(--fb);margin-bottom:4px}
+.phase-sub{font-size:12px;color:var(--g2);max-width:500px;line-height:1.6}
+.phase-meta{display:flex;flex-direction:column;gap:5px;align-items:flex-end}
+.pm-item{font-family:var(--fm);font-size:10px;color:var(--g2);display:flex;gap:6px;align-items:center}
+.pm-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0}
+.phase-body{background:var(--s2);padding:20px 24px}
+.phase-tasks{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.ptask{display:flex;gap:10px;align-items:flex-start;font-size:12px;color:var(--g1);line-height:1.6;padding:8px 10px;background:var(--s3);border-radius:7px;border:1px solid var(--b1)}
+.ptask-icon{font-size:12px;flex-shrink:0;margin-top:1px}
+.ptask strong{color:var(--w);font-weight:600;display:block;margin-bottom:2px}
+.phase-deliverable{margin-top:14px;padding:10px 14px;border-radius:7px;font-size:11.5px;display:flex;align-items:flex-start;gap:8px}
+.pd-p1{background:var(--grdim);border:1px solid var(--grmid);color:var(--green)}
+.pd-p2{background:var(--cdim);border:1px solid var(--cmid);color:var(--cyan)}
+.pd-p3{background:var(--pdim);border:1px solid var(--pmid);color:var(--purple)}
+
+/* FOLDER TREE */
+.tree{background:var(--s2);border:1px solid var(--b2);border-radius:12px;overflow:hidden}
+.tree-top{padding:10px 18px;background:var(--s3);border-bottom:1px solid var(--b2);display:flex;align-items:center;gap:10px}
+.tree-dots{display:flex;gap:5px}
+.tree-dot{width:10px;height:10px;border-radius:50%}
+.td-r{background:#ff5f57}.td-y{background:#ffbd2e}.td-g{background:#28c840}
+.tree-name{font-family:var(--fm);font-size:11px;color:var(--g2)}
+.tree-body{padding:18px 20px;font-family:var(--fm);font-size:12px;line-height:2;overflow-x:auto}
+.tr{display:block;white-space:nowrap}
+.ti{color:var(--g4)}
+.td{color:var(--g2)}
+.tf{color:var(--w)}
+.tf.py{color:var(--cyan)}
+.tf.yml{color:var(--green)}
+.tf.env{color:var(--gold)}
+.tf.md{color:var(--purple)}
+.tf.sql{color:var(--blue)}
+.tf.sh{color:var(--orange)}
+.tc{font-size:10px;color:var(--g4);margin-left:8px;font-style:italic}
+.tg{color:var(--green);font-weight:700}
+.tr.highlight{background:rgba(0,212,255,.04);border-radius:4px;margin:0 -4px;padding:0 4px}
+
+/* CODE BLOCKS */
+.code-wrap{border-radius:12px;overflow:hidden;margin-bottom:16px;border:1px solid var(--b2)}
+.code-head{padding:9px 16px;background:var(--s3);border-bottom:1px solid var(--b2);display:flex;justify-content:space-between;align-items:center}
+.code-file{font-family:var(--fm);font-size:10px;color:var(--g2)}
+.code-file strong{color:var(--cyan)}
+.code-lang{font-family:var(--fm);font-size:9px;font-weight:700;padding:2px 7px;border-radius:100px;background:var(--s4);border:1px solid var(--b2);color:var(--g3);text-transform:uppercase;letter-spacing:1px}
+.code-body{padding:18px 20px;background:var(--s2);overflow-x:auto}
+pre{font-family:var(--fm);font-size:12px;line-height:1.75;white-space:pre}
+.kw{color:var(--purple)}
+.fn{color:var(--cyan)}
+.st{color:var(--green)}
+.cm{color:var(--g3);font-style:italic}
+.nu{color:var(--gold)}
+.ty{color:var(--blue)}
+.dc{color:var(--gold)}
+.op{color:var(--g2)}
+
+/* SETUP STEPS */
+.setup-grid{display:grid;gap:12px}
+.setup-step{background:var(--s2);border:1px solid var(--b2);border-radius:11px;overflow:hidden}
+.ss-head{padding:13px 18px;border-bottom:1px solid var(--b1);display:flex;align-items:center;gap:12px}
+.ss-num{font-family:var(--fh);font-size:12px;font-weight:900;color:var(--bg);background:var(--cyan);width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:10px}
+.ss-title{font-size:13px;font-weight:700;color:var(--w);font-family:var(--fb)}
+.ss-est{font-family:var(--fm);font-size:9px;color:var(--g3);margin-left:auto}
+.ss-body{padding:14px 18px}
+.ss-cmd{font-family:var(--fm);font-size:12px;background:var(--s3);border:1px solid var(--b2);border-radius:7px;padding:10px 14px;color:var(--cyan);margin-top:8px;display:block;line-height:1.8;overflow-x:auto}
+.ss-note{font-size:12px;color:var(--g2);line-height:1.65;margin-top:8px}
+
+/* ENV TABLE */
+.env-table{width:100%;border-collapse:collapse;border-radius:10px;overflow:hidden;border:1px solid var(--b2)}
+.env-table th{background:var(--s3);padding:9px 14px;font-family:var(--fm);font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--g3);text-align:left;border-bottom:1px solid var(--b2)}
+.env-table td{padding:10px 14px;border-bottom:1px solid var(--b1);font-size:12px;vertical-align:top}
+.env-table tr:last-child td{border-bottom:none}
+.env-table tr:hover td{background:var(--s2)}
+.ev-key{font-family:var(--fm);color:var(--cyan);font-size:11px}
+.ev-val{font-family:var(--fm);color:var(--gold);font-size:11px}
+.ev-desc{color:var(--g2);font-size:11.5px}
+.ev-req{font-family:var(--fm);font-size:9px;font-weight:700;padding:2px 6px;border-radius:100px}
+.req{background:var(--rdim);border:1px solid var(--rmid);color:var(--red)}
+.opt{background:var(--grdim);border:1px solid var(--grmid);color:var(--green)}
+
+/* DB SCHEMA */
+.schema-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.schema-card{background:var(--s2);border:1px solid var(--b2);border-radius:10px;overflow:hidden}
+.sc-head{padding:10px 16px;background:var(--s3);border-bottom:1px solid var(--b2);font-family:var(--fm);font-size:11px;font-weight:700;color:var(--cyan)}
+.sc-body{padding:12px 16px;font-family:var(--fm);font-size:11px;line-height:2}
+.sc-col{display:flex;justify-content:space-between;gap:8px;border-bottom:1px solid var(--b1);padding:3px 0}
+.sc-col:last-child{border-bottom:none}
+.sc-name{color:var(--w);font-weight:600}
+.sc-type{color:var(--g3)}
+.sc-note{color:var(--gold);font-size:9.5px;font-style:italic}
+
+/* API TABLE */
+.api-table{width:100%;border-collapse:collapse;border-radius:10px;overflow:hidden;border:1px solid var(--b2)}
+.api-table th{background:var(--s3);padding:9px 14px;font-family:var(--fm);font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--g3);text-align:left;border-bottom:1px solid var(--b2)}
+.api-table td{padding:11px 14px;border-bottom:1px solid var(--b1);font-size:12.5px;vertical-align:top;line-height:1.6}
+.api-table tr:last-child td{border-bottom:none}
+.api-table tr:hover td{background:var(--s2)}
+.method{font-family:var(--fm);font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px}
+.m-post{background:var(--gdim);border:1px solid var(--gmid);color:var(--gold)}
+.m-get{background:var(--grdim);border:1px solid var(--grmid);color:var(--green)}
+.m-del{background:var(--rdim);border:1px solid var(--rmid);color:var(--red)}
+.endpoint{font-family:var(--fm);font-size:11.5px;color:var(--cyan)}
+
+/* CALLOUTS */
+.callout{padding:13px 17px;border-radius:8px;font-size:12.5px;line-height:1.7;margin-top:14px;border:1px solid}
+.c-info{background:var(--cdim);border-color:var(--cmid);color:var(--g1)}
+.c-info strong{color:var(--cyan)}
+.c-warn{background:var(--gdim);border-color:var(--gmid);color:var(--g1)}
+.c-warn strong{color:var(--gold)}
+.c-ok{background:var(--grdim);border-color:var(--grmid);color:var(--g1)}
+.c-ok strong{color:var(--green)}
+.c-danger{background:var(--rdim);border-color:var(--rmid);color:var(--g1)}
+.c-danger strong{color:var(--red)}
+code{font-family:var(--fm);font-size:11px;background:var(--s3);padding:2px 6px;border-radius:4px;color:var(--teal)}
+
+/* ROADMAP TIMELINE */
+.timeline{position:relative;padding-left:28px}
+.timeline::before{content:'';position:absolute;left:8px;top:0;bottom:0;width:2px;background:linear-gradient(180deg,var(--green),var(--cyan),var(--purple))}
+.tl-item{position:relative;margin-bottom:24px}
+.tl-dot{position:absolute;left:-24px;top:4px;width:12px;height:12px;border-radius:50%;border:2px solid var(--bg)}
+.tl-dot-gr{background:var(--green)}.tl-dot-cy{background:var(--cyan)}.tl-dot-p{background:var(--purple)}
+.tl-head{display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap}
+.tl-phase{font-family:var(--fm);font-size:9px;font-weight:700;padding:2px 8px;border-radius:100px}
+.tlp-1{background:var(--grdim);border:1px solid var(--grmid);color:var(--green)}
+.tlp-2{background:var(--cdim);border:1px solid var(--cmid);color:var(--cyan)}
+.tlp-3{background:var(--pdim);border:1px solid var(--pmid);color:var(--purple)}
+.tl-title{font-size:13.5px;font-weight:700;color:var(--w);font-family:var(--fb)}
+.tl-week{font-family:var(--fm);font-size:10px;color:var(--g3)}
+.tl-body{font-size:12px;color:var(--g2);line-height:1.7;padding:10px 14px;background:var(--s2);border-radius:8px;border:1px solid var(--b1)}
+.tl-body ul{padding-left:14px}
+.tl-body li{margin-bottom:3px}
+
+/* FOOTER */
+.footer{padding:22px 50px;background:var(--s1);border-top:1px solid var(--b1);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}
+.footer span{font-family:var(--fm);font-size:10px;color:var(--g4)}
+
+@media(max-width:960px){
+  nav{display:none}main{margin-left:0}
+  .statsbar{grid-template-columns:repeat(3,1fr)}
+  .phase-tasks{grid-template-columns:1fr}
+  .schema-grid{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nb">
+    <div class="nb-art">Artifact 02 of 03</div>
+    <div class="nb-title">Build Guide & Code Architecture</div>
+    <div class="nb-sub">Phases · Folder Structure · Setup · Code</div>
+  </div>
+  <div class="ng">Phases</div>
+  <a class="na active" href="#phases"><span class="nn">01</span>Build Phases <span class="phase-badge pb-p1">P1→P3</span></a>
+  <a class="na" href="#roadmap"><span class="nn">02</span>Timeline</a>
+  <div class="ng">Structure</div>
+  <a class="na" href="#folders"><span class="nn">03</span>Folder Structure</a>
+  <a class="na" href="#docker"><span class="nn">04</span>Docker Compose</a>
+  <a class="na" href="#env"><span class="nn">05</span>Env Variables</a>
+  <a class="na" href="#db"><span class="nn">06</span>Database Schema</a>
+  <div class="ng">Code Guide</div>
+  <a class="na" href="#api"><span class="nn">07</span>API Endpoints</a>
+  <a class="na" href="#ingestion"><span class="nn">08</span>Ingestion Code <span class="phase-badge pb-p1">P1</span></a>
+  <a class="na" href="#agent"><span class="nn">09</span>Agent State & Graph <span class="phase-badge pb-p1">P1</span></a>
+  <a class="na" href="#retrieval"><span class="nn">10</span>Hybrid Retrieval <span class="phase-badge pb-p1">P1</span></a>
+  <a class="na" href="#reranker"><span class="nn">11</span>Local Reranker <span class="phase-badge pb-p2">P2</span></a>
+  <a class="na" href="#faithfulness"><span class="nn">12</span>Faithfulness Check <span class="phase-badge pb-p2">P2</span></a>
+  <a class="na" href="#langfuse"><span class="nn">13</span>Langfuse Tracing <span class="phase-badge pb-p2">P2</span></a>
+  <div class="ng">Setup</div>
+  <a class="na" href="#setup"><span class="nn">14</span>Step-by-Step Setup</a>
+  <a class="na" href="#commands"><span class="nn">15</span>Dev Commands</a>
+</nav>
+
+<main>
+
+<!-- HERO -->
+<div class="hero">
+  <div class="h-eyebrow">
+    <span class="h-art-num">ARTIFACT 02 / 03</span>
+    <span class="h-of">Build Guide & Code Architecture</span>
+  </div>
+  <div class="h-title">Build Guide &<br><em>Code Architecture</em></div>
+  <div class="h-sub">The complete engineering reference. Three build phases, full folder structure, every config file, database schema, API contract, and code skeletons for every major component. Start Phase 1, ship something working, then layer in Phase 2 and 3.</div>
+  <div class="chips">
+    <span class="chip c-gr">Phase 1 → Core RAG</span>
+    <span class="chip c-cy">Phase 2 → Observability</span>
+    <span class="chip c-p">Phase 3 → Upgrades</span>
+    <span class="chip c-g">~6 Weeks Total</span>
+    <span class="chip c-b">Docker-First</span>
+  </div>
+</div>
+
+<div class="statsbar">
+  <div class="sb"><div class="sb-val sv-gr">3</div><div class="sb-label">Build Phases</div></div>
+  <div class="sb"><div class="sb-val sv-cy">6</div><div class="sb-label">Docker Services</div></div>
+  <div class="sb"><div class="sb-val sv-g">4</div><div class="sb-label">Postgres Tables</div></div>
+  <div class="sb"><div class="sb-val sv-p">8</div><div class="sb-label">LangGraph Nodes</div></div>
+  <div class="sb"><div class="sb-val sv-b">7</div><div class="sb-label">API Endpoints</div></div>
+</div>
+
+<!-- ── 01 PHASES ── -->
+<section id="phases">
+  <div class="sec-ey"><span class="sec-num">SEC-01</span><span class="sec-tag">Build Phases</span></div>
+  <div class="sec-title">Three <em>Phases</em></div>
+  <div class="sec-lead">Don't try to build everything at once. Phase 1 gets you a working Agentic RAG. Phase 2 makes it observable and trustworthy. Phase 3 upgrades the quality ceiling. Each phase ships something testable end-to-end.</div>
+
+  <div class="phase-grid">
+
+    <!-- PHASE 1 -->
+    <div class="phase-card">
+      <div class="phase-head ph-p1">
+        <div>
+          <div class="phase-num">PHASE 1 — CORE RAG</div>
+          <div class="phase-title">Working Agentic RAG, End to End</div>
+          <div class="phase-sub">Ingestion pipeline, hybrid retrieval, LangGraph agent loop, SSE streaming. Everything wired up. You can upload a PDF and ask questions about it.</div>
+        </div>
+        <div class="phase-meta">
+          <div class="pm-item"><div class="pm-dot" style="background:var(--green)"></div>Weeks 1–3</div>
+          <div class="pm-item"><div class="pm-dot" style="background:var(--green)"></div>~5 Docker services</div>
+          <div class="pm-item"><div class="pm-dot" style="background:var(--green)"></div>Core functionality</div>
+        </div>
+      </div>
+      <div class="phase-body">
+        <div class="phase-tasks">
+          <div class="ptask"><span class="ptask-icon">📁</span><div><strong>Project scaffold</strong>Folder structure, pyproject.toml, Docker Compose base, env files</div></div>
+          <div class="ptask"><span class="ptask-icon">🐘</span><div><strong>PostgreSQL schema</strong>Create all 4 tables with Alembic migrations</div></div>
+          <div class="ptask"><span class="ptask-icon">🔷</span><div><strong>Qdrant setup</strong>Collection creation per tenant, named vector config</div></div>
+          <div class="ptask"><span class="ptask-icon">⚡</span><div><strong>FastAPI skeleton</strong>/ingest, /chat/stream, /health endpoints with Logto auth middleware</div></div>
+          <div class="ptask"><span class="ptask-icon">⚙️</span><div><strong>Celery worker</strong>Redis broker, ingestion task, Docling + chunking + embed + upsert</div></div>
+          <div class="ptask"><span class="ptask-icon">🔍</span><div><strong>Hybrid search</strong>Qdrant prefetch + RRF fusion, parent chunk fetch from Postgres</div></div>
+          <div class="ptask"><span class="ptask-icon">🤖</span><div><strong>LangGraph agent</strong>All 7 nodes, AgentState, conditional routing, SSE output</div></div>
+          <div class="ptask"><span class="ptask-icon">🔴</span><div><strong>Redis cache</strong>Semantic cache on query embeddings, threshold 0.88, TTL 24h</div></div>
+        </div>
+        <div class="phase-deliverable pd-p1">✓ <strong>Phase 1 Done when:</strong> You can POST a PDF to /ingest, wait for Celery to process it, then POST a question to /chat/stream and get a streamed, cited answer back.</div>
+      </div>
+    </div>
+
+    <!-- PHASE 2 -->
+    <div class="phase-card">
+      <div class="phase-head ph-p2">
+        <div>
+          <div class="phase-num">PHASE 2 — OBSERVABILITY + TRUST</div>
+          <div class="phase-title">Make It Observable, Trustworthy, and Evaluable</div>
+          <div class="phase-sub">Langfuse tracing, RAGAS eval, faithfulness check node, local BGE reranker, document versioning. You can now measure quality and trust the answers.</div>
+        </div>
+        <div class="phase-meta">
+          <div class="pm-item"><div class="pm-dot" style="background:var(--cyan)"></div>Weeks 4–5</div>
+          <div class="pm-item"><div class="pm-dot" style="background:var(--cyan)"></div>+Langfuse service</div>
+          <div class="pm-item"><div class="pm-dot" style="background:var(--cyan)"></div>Quality metrics</div>
+        </div>
+      </div>
+      <div class="phase-body">
+        <div class="phase-tasks">
+          <div class="ptask"><span class="ptask-icon">🔭</span><div><strong>Langfuse self-hosted</strong>Add to Docker Compose, @observe() on every LangGraph node</div></div>
+          <div class="ptask"><span class="ptask-icon">📊</span><div><strong>RAGAS integration</strong>Async post-generation eval, push scores to Langfuse per query</div></div>
+          <div class="ptask"><span class="ptask-icon">✅</span><div><strong>Faithfulness check node</strong>Node 8 in LangGraph — Gemini Flash verifies answer vs source chunks</div></div>
+          <div class="ptask"><span class="ptask-icon">⚡</span><div><strong>Local BGE reranker</strong>Swap Cohere API call for in-process BGE-Reranker-v2-M3</div></div>
+          <div class="ptask"><span class="ptask-icon">🗂️</span><div><strong>Document versioning</strong>is_active flag, soft-delete on re-ingest, version history table</div></div>
+          <div class="ptask"><span class="ptask-icon">🎯</span><div><strong>LLM classifier</strong>Replace keyword routing with Gemini Flash JSON classifier</div></div>
+          <div class="ptask"><span class="ptask-icon">📝</span><div><strong>Eval dataset</strong>Build 50+ Q&A pairs from your test documents, run baseline RAGAS</div></div>
+          <div class="ptask"><span class="ptask-icon">👍</span><div><strong>Feedback endpoint</strong>POST /feedback — thumbs up/down wired to Langfuse trace</div></div>
+        </div>
+        <div class="phase-deliverable pd-p2">✓ <strong>Phase 2 Done when:</strong> Every query has a Langfuse trace with faithfulness score. RAGAS baseline is established. BGE reranker is running locally. Document re-ingest correctly soft-deletes old version.</div>
+      </div>
+    </div>
+
+    <!-- PHASE 3 -->
+    <div class="phase-card">
+      <div class="phase-head ph-p3">
+        <div>
+          <div class="phase-num">PHASE 3 — QUALITY UPGRADES</div>
+          <div class="phase-title">Push the Quality Ceiling</div>
+          <div class="phase-sub">HyDE for short queries, ColPali for visual PDFs, semantic chunking, long-context bypass for small corpora. These require re-ingesting data but measurably improve retrieval quality.</div>
+        </div>
+        <div class="phase-meta">
+          <div class="pm-item"><div class="pm-dot" style="background:var(--purple)"></div>Week 6+</div>
+          <div class="pm-item"><div class="pm-dot" style="background:var(--purple)"></div>Driven by RAGAS data</div>
+          <div class="pm-item"><div class="pm-dot" style="background:var(--purple)"></div>Next-gen patterns</div>
+        </div>
+      </div>
+      <div class="phase-body">
+        <div class="phase-tasks">
+          <div class="ptask"><span class="ptask-icon">🔮</span><div><strong>HyDE retrieval</strong>Hypothetical doc embeddings for short/ambiguous queries (&lt;8 tokens)</div></div>
+          <div class="ptask"><span class="ptask-icon">🖼️</span><div><strong>ColPali/ColQwen</strong>Visual late-interaction for PDF pages with tables and charts</div></div>
+          <div class="ptask"><span class="ptask-icon">✂️</span><div><strong>Semantic chunking</strong>SemanticSplitterNodeParser — if RAGAS context_precision &lt; 0.75</div></div>
+          <div class="ptask"><span class="ptask-icon">🚀</span><div><strong>Long-context bypass</strong>Gemini 2.5 Pro 1M ctx for small single-doc queries — skip RAG entirely</div></div>
+          <div class="ptask"><span class="ptask-icon">🔗</span><div><strong>Speculative RAG</strong>Parallel draft generation + verifier selection</div></div>
+          <div class="ptask"><span class="ptask-icon">📈</span><div><strong>Embedding upgrade eval</strong>Test Cohere embed-v4 (multimodal prep) vs text-embedding-3-large</div></div>
+        </div>
+        <div class="phase-deliverable pd-p3">✓ <strong>Phase 3 Trigger:</strong> Each upgrade is triggered by specific RAGAS thresholds from Phase 2 — not by instinct. If RAGAS says context_precision is fine, don't touch chunking. Let the data decide.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── 02 TIMELINE ── -->
+<section id="roadmap">
+  <div class="sec-ey"><span class="sec-num">SEC-02</span><span class="sec-tag">Timeline</span></div>
+  <div class="sec-title">Week-by-Week <em>Roadmap</em></div>
+  <div class="sec-lead">Rough weekly breakdown. Each week ends with something testable. Don't skip weeks — the foundations matter.</div>
+
+  <div class="timeline">
+    <div class="tl-item"><div class="tl-dot tl-dot-gr"></div>
+      <div class="tl-head"><span class="tl-phase tlp-1">PHASE 1</span><span class="tl-title">Week 1 — Scaffold + Infrastructure</span><span class="tl-week">Days 1–7</span></div>
+      <div class="tl-body"><ul>
+        <li>Create project folder structure (see Section 03)</li>
+        <li>Write <code>docker-compose.yml</code> — all 5 Phase 1 services</li>
+        <li>Write all <code>.env</code> files, <code>pyproject.toml</code>, <code>Makefile</code></li>
+        <li>Write Alembic migrations for all 4 PostgreSQL tables</li>
+        <li>Create Qdrant collection creation script with named vector config</li>
+        <li><strong>End of week: <code>docker compose up</code> brings all services live</strong></li>
+      </ul></div>
+    </div>
+    <div class="tl-item"><div class="tl-dot tl-dot-gr"></div>
+      <div class="tl-head"><span class="tl-phase tlp-1">PHASE 1</span><span class="tl-title">Week 2 — Ingestion Pipeline</span><span class="tl-week">Days 8–14</span></div>
+      <div class="tl-body"><ul>
+        <li>FastAPI <code>/ingest</code> endpoint — Logto auth, SHA256 dedup, Celery dispatch</li>
+        <li>Celery worker — Docling parsing, HierarchicalNodeParser, embed, Qdrant upsert</li>
+        <li>Document versioning logic — is_active flag, soft-delete on re-ingest</li>
+        <li>Post-ingest validation (chunk count check)</li>
+        <li><strong>End of week: Upload a PDF, see chunks in Qdrant UI (<code>localhost:6333/dashboard</code>)</strong></li>
+      </ul></div>
+    </div>
+    <div class="tl-item"><div class="tl-dot tl-dot-gr"></div>
+      <div class="tl-head"><span class="tl-phase tlp-1">PHASE 1</span><span class="tl-title">Week 3 — Query Pipeline + Agent Loop</span><span class="tl-week">Days 15–21</span></div>
+      <div class="tl-body"><ul>
+        <li>Redis semantic cache — embed query, cosine similarity check, 0.88 threshold</li>
+        <li>LangGraph AgentState model + all 7 nodes (use Cohere rerank as placeholder for now)</li>
+        <li>Hybrid Qdrant search — dense + sparse prefetch, RRF fusion</li>
+        <li>Parent chunk fetch from PostgreSQL</li>
+        <li>SSE streaming output from <code>/chat/stream</code></li>
+        <li><strong>End of week: Full Q&A pipeline working end-to-end. Ask a question, get a cited answer.</strong></li>
+      </ul></div>
+    </div>
+    <div class="tl-item"><div class="tl-dot tl-dot-cy"></div>
+      <div class="tl-head"><span class="tl-phase tlp-2">PHASE 2</span><span class="tl-title">Week 4 — Observability + Reranker Swap</span><span class="tl-week">Days 22–28</span></div>
+      <div class="tl-body"><ul>
+        <li>Add Langfuse to <code>docker-compose.yml</code>, configure self-hosted</li>
+        <li>Add <code>@observe()</code> decorators to every LangGraph node</li>
+        <li>Swap Cohere rerank → BGE-Reranker-v2-M3 local inference</li>
+        <li>Replace keyword classifier → Gemini Flash JSON classifier</li>
+        <li>Build 50-question eval dataset from your test documents</li>
+        <li><strong>End of week: Every query has a Langfuse trace. BGE reranker live.</strong></li>
+      </ul></div>
+    </div>
+    <div class="tl-item"><div class="tl-dot tl-dot-cy"></div>
+      <div class="tl-head"><span class="tl-phase tlp-2">PHASE 2</span><span class="tl-title">Week 5 — Faithfulness + RAGAS Baseline</span><span class="tl-week">Days 29–35</span></div>
+      <div class="tl-body"><ul>
+        <li>Add Node 8 — faithfulness_check using Gemini Flash</li>
+        <li>Integrate RAGAS — async post-generation, push scores to Langfuse</li>
+        <li>Run RAGAS on 50-question eval set — establish baseline numbers</li>
+        <li>Add <code>/feedback</code> endpoint — thumbs up/down wired to Langfuse trace</li>
+        <li><strong>End of week: You have RAGAS baseline. You know exactly where the system is weak.</strong></li>
+      </ul></div>
+    </div>
+    <div class="tl-item"><div class="tl-dot tl-dot-p"></div>
+      <div class="tl-head"><span class="tl-phase tlp-3">PHASE 3</span><span class="tl-title">Week 6+ — Data-Driven Upgrades</span><span class="tl-week">Days 36+</span></div>
+      <div class="tl-body"><ul>
+        <li>Look at RAGAS scores — pick the lowest dimension</li>
+        <li>If context_precision low → semantic chunking</li>
+        <li>If faithfulness low on short queries → add HyDE</li>
+        <li>If tables/charts not retrieving → ColPali/ColQwen</li>
+        <li>If small-corpus queries are slow → long-context bypass with Gemini 2.5 Pro</li>
+        <li><strong>Phase 3 is ongoing — let data drive, not instinct</strong></li>
+      </ul></div>
+    </div>
+  </div>
+</section>
+
+<!-- ── 03 FOLDERS ── -->
+<section id="folders">
+  <div class="sec-ey"><span class="sec-num">SEC-03</span><span class="sec-tag">Project Structure</span></div>
+  <div class="sec-title">Folder <em>Structure</em></div>
+  <div class="sec-lead">Complete folder layout. Every file has a clear home. The <code>app/</code> package is shared between the FastAPI container and the Celery worker container — same Docker image, different startup command.</div>
+
+  <div class="tree">
+    <div class="tree-top">
+      <div class="tree-dots"><div class="tree-dot td-r"></div><div class="tree-dot td-y"></div><div class="tree-dot td-g"></div></div>
+      <div class="tree-name">agentic-rag/</div>
+    </div>
+    <div class="tree-body">
+<span class="tr"><span class="tg">agentic-rag/</span></span>
+<span class="tr"><span class="ti">├── </span><span class="td">app/</span><span class="tc">— shared app package (FastAPI + Celery both import from here)</span></span>
+<span class="tr highlight"><span class="ti">│   ├── </span><span class="tf py">main.py</span><span class="tc">— FastAPI app init, middleware, router registration</span></span>
+<span class="tr"><span class="ti">│   ├── </span><span class="td">api/</span></span>
+<span class="tr highlight"><span class="ti">│   │   ├── </span><span class="tf py">ingest.py</span><span class="tc">— POST /ingest endpoint</span></span>
+<span class="tr highlight"><span class="ti">│   │   ├── </span><span class="tf py">chat.py</span><span class="tc">— POST /chat/stream SSE endpoint</span></span>
+<span class="tr"><span class="ti">│   │   ├── </span><span class="tf py">feedback.py</span><span class="tc">— POST /feedback (Phase 2)</span></span>
+<span class="tr"><span class="ti">│   │   └── </span><span class="tf py">health.py</span><span class="tc">— GET /health</span></span>
+<span class="tr"><span class="ti">│   ├── </span><span class="td">agent/</span></span>
+<span class="tr highlight"><span class="ti">│   │   ├── </span><span class="tf py">state.py</span><span class="tc">— AgentState Pydantic model (TypedDict)</span></span>
+<span class="tr highlight"><span class="ti">│   │   ├── </span><span class="tf py">graph.py</span><span class="tc">— LangGraph StateGraph, node wiring, conditional edges</span></span>
+<span class="tr"><span class="ti">│   │   └── </span><span class="td">nodes/</span></span>
+<span class="tr"><span class="ti">│   │       ├── </span><span class="tf py">classify.py</span><span class="tc">— classify_query node (Gemini Flash via OpenRouter, JSON mode)</span></span>
+<span class="tr"><span class="ti">│   │       ├── </span><span class="tf py">decompose.py</span><span class="tc">— decompose_question node</span></span>
+<span class="tr"><span class="ti">│   │       ├── </span><span class="tf py">retrieve.py</span><span class="tc">— hybrid Qdrant search node</span></span>
+<span class="tr"><span class="ti">│   │       ├── </span><span class="tf py">rerank.py</span><span class="tc">— BGE local reranker node</span></span>
+<span class="tr"><span class="ti">│   │       ├── </span><span class="tf py">parent_fetch.py</span><span class="tc">— PostgreSQL parent chunk fetch</span></span>
+<span class="tr"><span class="ti">│   │       ├── </span><span class="tf py">assess.py</span><span class="tc">— context assessment node (Gemini Flash via OpenRouter)</span></span>
+<span class="tr"><span class="ti">│   │       ├── </span><span class="tf py">generate.py</span><span class="tc">— openai/gpt-4o (via OpenRouter) generation node, streaming</span></span>
+<span class="tr"><span class="ti">│   │       ├── </span><span class="tf py">faithfulness.py</span><span class="tc">— faithfulness check node (Phase 2)</span></span>
+<span class="tr"><span class="ti">│   │       └── </span><span class="tf py">reformulate.py</span><span class="tc">— query reformulation node</span></span>
+<span class="tr"><span class="ti">│   ├── </span><span class="td">ingestion/</span></span>
+<span class="tr highlight"><span class="ti">│   │   ├── </span><span class="tf py">tasks.py</span><span class="tc">— Celery task definitions (@celery_app.task)</span></span>
+<span class="tr"><span class="ti">│   │   ├── </span><span class="tf py">parser.py</span><span class="tc">— Docling PDF parsing + table extraction</span></span>
+<span class="tr"><span class="ti">│   │   ├── </span><span class="tf py">chunker.py</span><span class="tc">— HierarchicalNodeParser wrapper</span></span>
+<span class="tr"><span class="ti">│   │   ├── </span><span class="tf py">embedder.py</span><span class="tc">— openai/text-embedding-3-small via OpenRouter + FastEmbed BM25 (local)</span></span>
+<span class="tr"><span class="ti">│   │   └── </span><span class="tf py">upserter.py</span><span class="tc">— Qdrant PointStruct upsert + count validation</span></span>
+<span class="tr"><span class="ti">│   ├── </span><span class="td">retrieval/</span></span>
+<span class="tr highlight"><span class="ti">│   │   ├── </span><span class="tf py">hybrid_search.py</span><span class="tc">— Qdrant prefetch + RRF fusion</span></span>
+<span class="tr"><span class="ti">│   │   ├── </span><span class="tf py">cache.py</span><span class="tc">— Redis semantic cache (embed → cosine → TTL)</span></span>
+<span class="tr"><span class="ti">│   │   └── </span><span class="tf py">bge_reranker.py</span><span class="tc">— BGE-Reranker-v2-M3 loader + inference (Phase 2)</span></span>
+<span class="tr"><span class="ti">│   ├── </span><span class="td">db/</span></span>
+<span class="tr"><span class="ti">│   │   ├── </span><span class="tf py">session.py</span><span class="tc">— SQLAlchemy async session factory</span></span>
+<span class="tr"><span class="ti">│   │   ├── </span><span class="tf py">models.py</span><span class="tc">— SQLAlchemy ORM models for all 4 tables</span></span>
+<span class="tr"><span class="ti">│   │   └── </span><span class="tf py">crud.py</span><span class="tc">— CRUD helpers: dedup check, parent chunk write/read</span></span>
+<span class="tr"><span class="ti">│   ├── </span><span class="td">core/</span></span>
+<span class="tr"><span class="ti">│   │   ├── </span><span class="tf py">config.py</span><span class="tc">— Pydantic Settings model, reads from .env</span></span>
+<span class="tr"><span class="ti">│   │   ├── </span><span class="tf py">auth.py</span><span class="tc">— PyJWT verification against Logto JWKS, require_auth + require_tenant FastAPI deps</span></span>
+<span class="tr"><span class="ti">│   │   ├── </span><span class="tf py">celery_app.py</span><span class="tc">— Celery app instance with Redis broker config</span></span>
+<span class="tr"><span class="ti">│   │   └── </span><span class="tf py">qdrant_client.py</span><span class="tc">— Qdrant client singleton</span></span>
+<span class="tr"><span class="ti">│   └── </span><span class="td">observability/</span><span class="tc">— Phase 2</span></span>
+<span class="tr"><span class="ti">│       ├── </span><span class="tf py">langfuse_client.py</span><span class="tc">— Langfuse SDK init, trace helpers</span></span>
+<span class="tr"><span class="ti">│       └── </span><span class="tf py">ragas_eval.py</span><span class="tc">— Async RAGAS scoring, push to Langfuse</span></span>
+<span class="tr"><span class="ti">├── </span><span class="td">migrations/</span></span>
+<span class="tr"><span class="ti">│   ├── </span><span class="tf py">env.py</span><span class="tc">— Alembic env</span></span>
+<span class="tr"><span class="ti">│   └── </span><span class="td">versions/</span><span class="tc">— auto-generated migration files</span></span>
+<span class="tr"><span class="ti">├── </span><span class="td">scripts/</span></span>
+<span class="tr"><span class="ti">│   ├── </span><span class="tf py">create_collections.py</span><span class="tc">— Qdrant collection init script</span></span>
+<span class="tr"><span class="ti">│   ├── </span><span class="tf py">seed_tenant.py</span><span class="tc">— create local tenant row mapped to a Logto organization</span></span>
+<span class="tr"><span class="ti">│   └── </span><span class="tf py">run_eval.py</span><span class="tc">— run RAGAS on eval dataset (Phase 2)</span></span>
+<span class="tr"><span class="ti">├── </span><span class="td">tests/</span></span>
+<span class="tr"><span class="ti">│   ├── </span><span class="tf py">test_ingestion.py</span></span>
+<span class="tr"><span class="ti">│   ├── </span><span class="tf py">test_retrieval.py</span></span>
+<span class="tr"><span class="ti">│   └── </span><span class="tf py">test_agent.py</span></span>
+<span class="tr"><span class="ti">├── </span><span class="td">data/</span></span>
+<span class="tr"><span class="ti">│   ├── </span><span class="td">uploads/</span><span class="tc">— Docker volume mount — raw PDFs stored here</span></span>
+<span class="tr"><span class="ti">│   └── </span><span class="td">eval/</span><span class="tc">— eval Q&A dataset (questions.json, answers.json)</span></span>
+<span class="tr highlight"><span class="ti">├── </span><span class="tf yml">docker-compose.yml</span><span class="tc">— all 6 services</span></span>
+<span class="tr"><span class="ti">├── </span><span class="tf yml">Dockerfile</span><span class="tc">— single image for both api + worker</span></span>
+<span class="tr highlight"><span class="ti">├── </span><span class="tf env">.env</span><span class="tc">— all secrets (never commit)</span></span>
+<span class="tr"><span class="ti">├── </span><span class="tf env">.env.example</span><span class="tc">— template with no secrets</span></span>
+<span class="tr"><span class="ti">├── </span><span class="tf md">pyproject.toml</span><span class="tc">— dependencies (uv or pip)</span></span>
+<span class="tr"><span class="ti">├── </span><span class="tf sh">Makefile</span><span class="tc">— dev commands shorthand</span></span>
+<span class="tr"><span class="ti">└── </span><span class="tf md">README.md</span></span>
+    </div>
+  </div>
+</section>
+
+<!-- ── 04 DOCKER COMPOSE ── -->
+<section id="docker">
+  <div class="sec-ey"><span class="sec-num">SEC-04</span><span class="sec-tag">Infrastructure</span></div>
+  <div class="sec-title">Docker <em>Compose</em></div>
+  <div class="sec-lead">Complete <code>docker-compose.yml</code>. One file, six services, persistent volumes. Phase 1 uses 5 services — add Langfuse in Phase 2.</div>
+
+  <div class="code-wrap">
+    <div class="code-head">
+      <div class="code-file"><strong>docker-compose.yml</strong> — root of project</div>
+      <div class="code-lang">YAML</div>
+    </div>
+    <div class="code-body">
+<pre><span class="kw">version</span><span class="op">:</span> <span class="st">"3.9"</span>
+
+<span class="kw">services</span><span class="op">:</span>
+
+  <span class="cm"># ── FastAPI ──────────────────────────────────────</span>
+  <span class="fn">api</span><span class="op">:</span>
+    <span class="kw">build</span><span class="op">:</span> <span class="st">.</span>
+    <span class="kw">command</span><span class="op">:</span> <span class="st">uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload</span>
+    <span class="kw">ports</span><span class="op">:</span> [<span class="st">"8000:8000"</span>]
+    <span class="kw">env_file</span><span class="op">:</span> <span class="st">.env</span>
+    <span class="kw">volumes</span><span class="op">:</span> [<span class="st">"./data/uploads:/data/uploads"</span>, <span class="st">"./app:/app/app"</span>]
+    <span class="kw">depends_on</span><span class="op">:</span> [redis, postgres, qdrant]
+
+  <span class="cm"># ── Celery Worker ────────────────────────────────</span>
+  <span class="fn">worker</span><span class="op">:</span>
+    <span class="kw">build</span><span class="op">:</span> <span class="st">.</span>
+    <span class="kw">command</span><span class="op">:</span> <span class="st">celery -A app.core.celery_app worker --loglevel=info --concurrency=2</span>
+    <span class="kw">env_file</span><span class="op">:</span> <span class="st">.env</span>
+    <span class="kw">volumes</span><span class="op">:</span> [<span class="st">"./data/uploads:/data/uploads"</span>, <span class="st">"./app:/app/app"</span>]
+    <span class="kw">depends_on</span><span class="op">:</span> [redis, postgres, qdrant]
+
+  <span class="cm"># ── Redis (triple duty) ──────────────────────────</span>
+  <span class="fn">redis</span><span class="op">:</span>
+    <span class="kw">image</span><span class="op">:</span> <span class="st">redis:7-alpine</span>
+    <span class="kw">ports</span><span class="op">:</span> [<span class="st">"6379:6379"</span>]
+    <span class="kw">volumes</span><span class="op">:</span> [<span class="st">"redis_data:/data"</span>]
+    <span class="kw">command</span><span class="op">:</span> <span class="st">redis-server --appendonly yes</span>
+
+  <span class="cm"># ── Qdrant ───────────────────────────────────────</span>
+  <span class="fn">qdrant</span><span class="op">:</span>
+    <span class="kw">image</span><span class="op">:</span> <span class="st">qdrant/qdrant:latest</span>
+    <span class="kw">ports</span><span class="op">:</span> [<span class="st">"6333:6333"</span>, <span class="st">"6334:6334"</span>]
+    <span class="kw">volumes</span><span class="op">:</span> [<span class="st">"qdrant_data:/qdrant/storage"</span>]
+
+  <span class="cm"># ── PostgreSQL ───────────────────────────────────</span>
+  <span class="fn">postgres</span><span class="op">:</span>
+    <span class="kw">image</span><span class="op">:</span> <span class="st">postgres:16-alpine</span>
+    <span class="kw">ports</span><span class="op">:</span> [<span class="st">"5432:5432"</span>]
+    <span class="kw">env_file</span><span class="op">:</span> <span class="st">.env</span>
+    <span class="kw">volumes</span><span class="op">:</span> [<span class="st">"postgres_data:/var/lib/postgresql/data"</span>]
+
+  <span class="cm"># ── Langfuse (add in Phase 2) ────────────────────</span>
+  <span class="fn">langfuse</span><span class="op">:</span>
+    <span class="kw">image</span><span class="op">:</span> <span class="st">langfuse/langfuse:latest</span>
+    <span class="kw">ports</span><span class="op">:</span> [<span class="st">"3000:3000"</span>]
+    <span class="kw">env_file</span><span class="op">:</span> <span class="st">.env</span>
+    <span class="kw">depends_on</span><span class="op">:</span> [postgres]
+
+<span class="kw">volumes</span><span class="op">:</span>
+  <span class="fn">redis_data</span><span class="op">:</span>
+  <span class="fn">qdrant_data</span><span class="op">:</span>
+  <span class="fn">postgres_data</span><span class="op">:</span></pre>
+    </div>
+  </div>
+
+  <div class="code-wrap">
+    <div class="code-head">
+      <div class="code-file"><strong>Dockerfile</strong> — single image for api + worker</div>
+      <div class="code-lang">Docker</div>
+    </div>
+    <div class="code-body">
+<pre><span class="kw">FROM</span> python:3.11-slim
+
+<span class="kw">WORKDIR</span> /app
+
+<span class="cm"># System deps for Docling + BGE reranker</span>
+<span class="kw">RUN</span> apt-get update &amp;&amp; apt-get install -y \
+    libglib2.0-0 libsm6 libxrender1 libxext6 \
+    poppler-utils tesseract-ocr &amp;&amp; rm -rf /var/lib/apt/lists/*
+
+<span class="kw">COPY</span> pyproject.toml .
+<span class="kw">RUN</span> pip install --no-cache-dir -e .
+
+<span class="cm"># Pre-download BGE reranker at build time (avoids cold start)</span>
+<span class="kw">RUN</span> python -c <span class="st">"from transformers import AutoModelForSequenceClassification; \
+    AutoModelForSequenceClassification.from_pretrained('BAAI/bge-reranker-v2-m3')"</span>
+
+<span class="kw">COPY</span> . .
+<span class="kw">EXPOSE</span> 8000</pre>
+    </div>
+  </div>
+</section>
+
+<!-- ── 05 ENV ── -->
+<section id="env">
+  <div class="sec-ey"><span class="sec-num">SEC-05</span><span class="sec-tag">Configuration</span></div>
+  <div class="sec-title">Environment <em>Variables</em></div>
+  <div class="sec-lead">All secrets in <code>.env</code>. Never commit this file — commit <code>.env.example</code> with empty values. The <code>app/core/config.py</code> Pydantic Settings model reads all of these.</div>
+
+  <table class="env-table">
+    <thead><tr><th>Variable</th><th>Example Value</th><th>Description</th><th>Required</th></tr></thead>
+    <tbody>
+      <tr><td class="ev-key">OPENROUTER_API_KEY</td><td class="ev-val">sk-or-...</td><td class="ev-desc">Single key for all chat + embedding traffic (OpenRouter routes to OpenAI / Google / etc.)</td><td><span class="ev-req req">required</span></td></tr>
+      <tr><td class="ev-key">OPENROUTER_BASE_URL</td><td class="ev-val">https://openrouter.ai/api/v1</td><td class="ev-desc">OpenRouter endpoint (OpenAI-compatible)</td><td><span class="ev-req opt">optional</span></td></tr>
+      <tr><td class="ev-key">OPENROUTER_APP_REFERER</td><td class="ev-val">http://localhost:8000</td><td class="ev-desc">Sent as <code>HTTP-Referer</code> for OpenRouter usage attribution</td><td><span class="ev-req opt">optional</span></td></tr>
+      <tr><td class="ev-key">OPENROUTER_APP_TITLE</td><td class="ev-val">agentic-rag</td><td class="ev-desc">Sent as <code>X-Title</code> for OpenRouter dashboard</td><td><span class="ev-req opt">optional</span></td></tr>
+      <tr><td class="ev-key">EMBEDDING_MODEL</td><td class="ev-val">openai/text-embedding-3-small</td><td class="ev-desc">1536-dim. Slash-prefixed model id understood by OpenRouter</td><td><span class="ev-req opt">optional</span></td></tr>
+      <tr><td class="ev-key">EMBEDDING_DIMS</td><td class="ev-val">1536</td><td class="ev-desc">Must match the embedding model. Used by Qdrant collection creation.</td><td><span class="ev-req opt">optional</span></td></tr>
+      <tr><td class="ev-key">LLM_MODEL_GENERATE</td><td class="ev-val">openai/gpt-4o</td><td class="ev-desc">Final answer generation</td><td><span class="ev-req opt">optional</span></td></tr>
+      <tr><td class="ev-key">LLM_MODEL_CLASSIFY / DECOMPOSE / ASSESS / REFORMULATE</td><td class="ev-val">google/gemini-2.5-flash</td><td class="ev-desc">Cheap orchestration models (OpenRouter slash-prefixed IDs)</td><td><span class="ev-req opt">optional</span></td></tr>
+      <tr><td class="ev-key">LOGTO_ENDPOINT</td><td class="ev-val">https://your-tenant.logto.app</td><td class="ev-desc">Logto tenant endpoint (provides <code>/oidc/.well-known/jwks.json</code>)</td><td><span class="ev-req req">required</span></td></tr>
+      <tr><td class="ev-key">LOGTO_RESOURCE</td><td class="ev-val">https://api.agentic-rag</td><td class="ev-desc">API resource indicator registered in Logto. Becomes the <code>aud</code> claim.</td><td><span class="ev-req req">required</span></td></tr>
+      <tr><td class="ev-key">LOGTO_APP_ID</td><td class="ev-val">m2m-app-id</td><td class="ev-desc">Logto app ID (used by clients exchanging tokens; also useful for SDK init)</td><td><span class="ev-req req">required</span></td></tr>
+      <tr><td class="ev-key">LOGTO_APP_SECRET</td><td class="ev-val">m2m-app-secret</td><td class="ev-desc">App secret. Only required for M2M token exchange flows (not for token verification on the API side).</td><td><span class="ev-req opt">optional</span></td></tr>
+      <tr><td class="ev-key">POSTGRES_USER</td><td class="ev-val">raguser</td><td class="ev-desc">PostgreSQL username</td><td><span class="ev-req req">required</span></td></tr>
+      <tr><td class="ev-key">POSTGRES_PASSWORD</td><td class="ev-val">ragpassword</td><td class="ev-desc">PostgreSQL password</td><td><span class="ev-req req">required</span></td></tr>
+      <tr><td class="ev-key">POSTGRES_DB</td><td class="ev-val">ragdb</td><td class="ev-desc">PostgreSQL database name</td><td><span class="ev-req req">required</span></td></tr>
+      <tr><td class="ev-key">POSTGRES_HOST</td><td class="ev-val">postgres</td><td class="ev-desc">Service name in Docker Compose (not localhost)</td><td><span class="ev-req req">required</span></td></tr>
+      <tr><td class="ev-key">REDIS_URL</td><td class="ev-val">redis://redis:6379</td><td class="ev-desc">Redis connection URL. Docker service name as host.</td><td><span class="ev-req req">required</span></td></tr>
+      <tr><td class="ev-key">QDRANT_HOST</td><td class="ev-val">qdrant</td><td class="ev-desc">Qdrant service hostname</td><td><span class="ev-req req">required</span></td></tr>
+      <tr><td class="ev-key">QDRANT_PORT</td><td class="ev-val">6333</td><td class="ev-desc">Qdrant HTTP port</td><td><span class="ev-req req">required</span></td></tr>
+      <tr><td class="ev-key">CELERY_BROKER_URL</td><td class="ev-val">redis://redis:6379/0</td><td class="ev-desc">Celery broker — Redis DB 0</td><td><span class="ev-req req">required</span></td></tr>
+      <tr><td class="ev-key">CELERY_RESULT_BACKEND</td><td class="ev-val">redis://redis:6379/1</td><td class="ev-desc">Celery result backend — Redis DB 1</td><td><span class="ev-req req">required</span></td></tr>
+      <tr><td class="ev-key">SEMANTIC_CACHE_REDIS_URL</td><td class="ev-val">redis://redis:6379/2</td><td class="ev-desc">Semantic cache — Redis DB 2 (separate from Celery)</td><td><span class="ev-req req">required</span></td></tr>
+      <tr><td class="ev-key">CACHE_SIMILARITY_THRESHOLD</td><td class="ev-val">0.88</td><td class="ev-desc">Cosine similarity cutoff for cache hits</td><td><span class="ev-req opt">optional</span></td></tr>
+      <tr><td class="ev-key">CACHE_TTL_SECONDS</td><td class="ev-val">86400</td><td class="ev-desc">Cache TTL (24 hours default)</td><td><span class="ev-req opt">optional</span></td></tr>
+      <tr><td class="ev-key">CONTEXT_SCORE_THRESHOLD</td><td class="ev-val">7</td><td class="ev-desc">Gemini Flash context assessment pass threshold (0-10)</td><td><span class="ev-req opt">optional</span></td></tr>
+      <tr><td class="ev-key">MAX_RETRIEVAL_ITERATIONS</td><td class="ev-val">3</td><td class="ev-desc">Max reformulation retries before fallback</td><td><span class="ev-req opt">optional</span></td></tr>
+      <tr><td class="ev-key">LANGFUSE_PUBLIC_KEY</td><td class="ev-val">pk-lf-...</td><td class="ev-desc">Langfuse public key (Phase 2)</td><td><span class="ev-req opt">Phase 2</span></td></tr>
+      <tr><td class="ev-key">LANGFUSE_SECRET_KEY</td><td class="ev-val">sk-lf-...</td><td class="ev-desc">Langfuse secret key (Phase 2)</td><td><span class="ev-req opt">Phase 2</span></td></tr>
+      <tr><td class="ev-key">LANGFUSE_HOST</td><td class="ev-val">http://langfuse:3000</td><td class="ev-desc">Self-hosted Langfuse URL (Phase 2)</td><td><span class="ev-req opt">Phase 2</span></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ── 06 DB SCHEMA ── -->
+<section id="db">
+  <div class="sec-ey"><span class="sec-num">SEC-06</span><span class="sec-tag">Database</span></div>
+  <div class="sec-title">PostgreSQL <em>Schema</em></div>
+  <div class="sec-lead">4 tables. Documents tracks ingestion + dedup. Parent chunks stores the 1024-token context windows. Tenants maps a Logto organization to a Qdrant collection + per-tenant settings. Eval logs captures RAGAS scores (Phase 2).</div>
+
+  <div class="schema-grid">
+    <div class="schema-card">
+      <div class="sc-head">documents</div>
+      <div class="sc-body">
+        <div class="sc-col"><span class="sc-name">id</span><span class="sc-type">UUID PK</span></div>
+        <div class="sc-col"><span class="sc-name">tenant_id</span><span class="sc-type">VARCHAR · IDX</span></div>
+        <div class="sc-col"><span class="sc-name">filename</span><span class="sc-type">VARCHAR</span></div>
+        <div class="sc-col"><span class="sc-name">doc_type</span><span class="sc-type">VARCHAR</span><span class="sc-note">e.g. "credit_policy"</span></div>
+        <div class="sc-col"><span class="sc-name">content_hash</span><span class="sc-type">VARCHAR(64) · UNIQUE</span><span class="sc-note">SHA256</span></div>
+        <div class="sc-col"><span class="sc-name">version</span><span class="sc-type">INTEGER</span><span class="sc-note">increments on re-ingest</span></div>
+        <div class="sc-col"><span class="sc-name">is_active</span><span class="sc-type">BOOLEAN · IDX</span><span class="sc-note">versioning flag</span></div>
+        <div class="sc-col"><span class="sc-name">file_path</span><span class="sc-type">VARCHAR</span><span class="sc-note">Docker volume path</span></div>
+        <div class="sc-col"><span class="sc-name">page_count</span><span class="sc-type">INTEGER</span></div>
+        <div class="sc-col"><span class="sc-name">chunk_count</span><span class="sc-type">INTEGER</span><span class="sc-note">for validation</span></div>
+        <div class="sc-col"><span class="sc-name">source_date</span><span class="sc-type">DATE</span></div>
+        <div class="sc-col"><span class="sc-name">created_at</span><span class="sc-type">TIMESTAMPTZ</span></div>
+      </div>
+    </div>
+    <div class="schema-card">
+      <div class="sc-head">parent_chunks</div>
+      <div class="sc-body">
+        <div class="sc-col"><span class="sc-name">id</span><span class="sc-type">UUID PK</span></div>
+        <div class="sc-col"><span class="sc-name">parent_id</span><span class="sc-type">VARCHAR · IDX</span><span class="sc-note">matches Qdrant payload</span></div>
+        <div class="sc-col"><span class="sc-name">document_id</span><span class="sc-type">UUID · FK → documents</span></div>
+        <div class="sc-col"><span class="sc-name">tenant_id</span><span class="sc-type">VARCHAR · IDX</span></div>
+        <div class="sc-col"><span class="sc-name">text</span><span class="sc-type">TEXT</span><span class="sc-note">1024-token context window</span></div>
+        <div class="sc-col"><span class="sc-name">page_num</span><span class="sc-type">INTEGER</span></div>
+        <div class="sc-col"><span class="sc-name">chunk_index</span><span class="sc-type">INTEGER</span></div>
+        <div class="sc-col"><span class="sc-name">is_active</span><span class="sc-type">BOOLEAN · IDX</span><span class="sc-note">mirrors document version</span></div>
+        <div class="sc-col"><span class="sc-name">created_at</span><span class="sc-type">TIMESTAMPTZ</span></div>
+      </div>
+    </div>
+    <div class="schema-card">
+      <div class="sc-head">tenants</div>
+      <div class="sc-body">
+        <div class="sc-col"><span class="sc-name">id</span><span class="sc-type">UUID PK</span></div>
+        <div class="sc-col"><span class="sc-name">tenant_id</span><span class="sc-type">VARCHAR · UNIQUE</span><span class="sc-note">slug, matches Logto <code>organization_id</code></span></div>
+        <div class="sc-col"><span class="sc-name">name</span><span class="sc-type">VARCHAR</span></div>
+        <div class="sc-col"><span class="sc-name">qdrant_collection</span><span class="sc-type">VARCHAR</span><span class="sc-note">collection name in Qdrant</span></div>
+        <div class="sc-col"><span class="sc-name">settings</span><span class="sc-type">JSONB</span><span class="sc-note">per-tenant config overrides</span></div>
+        <div class="sc-col"><span class="sc-name">created_at</span><span class="sc-type">TIMESTAMPTZ</span></div>
+      </div>
+    </div>
+    <div class="schema-card">
+      <div class="sc-head">eval_logs <span style="color:var(--g3);font-size:9px;font-weight:400;margin-left:8px">Phase 2</span></div>
+      <div class="sc-body">
+        <div class="sc-col"><span class="sc-name">id</span><span class="sc-type">UUID PK</span></div>
+        <div class="sc-col"><span class="sc-name">trace_id</span><span class="sc-type">VARCHAR</span><span class="sc-note">Langfuse trace ID</span></div>
+        <div class="sc-col"><span class="sc-name">tenant_id</span><span class="sc-type">VARCHAR · IDX</span></div>
+        <div class="sc-col"><span class="sc-name">query</span><span class="sc-type">TEXT</span></div>
+        <div class="sc-col"><span class="sc-name">faithfulness</span><span class="sc-type">FLOAT</span></div>
+        <div class="sc-col"><span class="sc-name">answer_relevancy</span><span class="sc-type">FLOAT</span></div>
+        <div class="sc-col"><span class="sc-name">context_precision</span><span class="sc-type">FLOAT</span></div>
+        <div class="sc-col"><span class="sc-name">context_recall</span><span class="sc-type">FLOAT</span></div>
+        <div class="sc-col"><span class="sc-name">context_score</span><span class="sc-type">FLOAT</span><span class="sc-note">Gemini assessment 0-10</span></div>
+        <div class="sc-col"><span class="sc-name">user_feedback</span><span class="sc-type">SMALLINT</span><span class="sc-note">1=👍 -1=👎 0=none</span></div>
+        <div class="sc-col"><span class="sc-name">created_at</span><span class="sc-type">TIMESTAMPTZ · IDX</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── 07 API ENDPOINTS ── -->
+<section id="api">
+  <div class="sec-ey"><span class="sec-num">SEC-07</span><span class="sec-tag">API Contract</span></div>
+  <div class="sec-title">API <em>Endpoints</em></div>
+  <div class="sec-lead">All endpoints require a Logto-issued access token via <code>Authorization: Bearer &lt;token&gt;</code> (except /health). The token is verified using <strong>PyJWT</strong> against the JWKS at <code>{LOGTO_ENDPOINT}/oidc/.well-known/jwks.json</code> (cached, 5-min lifespan) with audience <code>LOGTO_RESOURCE</code>. The tenant_id is always extracted server-side from the <code>organization_id</code> claim — never from the request body.</div>
+
+  <table class="api-table">
+    <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th><th>Returns</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><span class="method m-post">POST</span></td>
+        <td class="endpoint">/ingest</td>
+        <td>Upload a PDF. Validates, deduplicates, dispatches Celery task. Returns immediately — processing is async.</td>
+        <td><code>{"task_id": "...", "status": "queued"}</code></td>
+      </tr>
+      <tr>
+        <td><span class="method m-get">GET</span></td>
+        <td class="endpoint">/ingest/status/{task_id}</td>
+        <td>Poll Celery task status. Returns: pending | processing | success | failed with error detail.</td>
+        <td><code>{"status": "success", "chunk_count": 84}</code></td>
+      </tr>
+      <tr>
+        <td><span class="method m-post">POST</span></td>
+        <td class="endpoint">/chat/stream</td>
+        <td>Submit a query. Returns SSE stream: status events → token events → done event with full citations JSON.</td>
+        <td>SSE stream</td>
+      </tr>
+      <tr>
+        <td><span class="method m-post">POST</span></td>
+        <td class="endpoint">/feedback</td>
+        <td>Submit thumbs up/down for a query. Body: <code>{"trace_id": "...", "rating": 1}</code>. Wired to Langfuse trace. Phase 2.</td>
+        <td><code>{"status": "recorded"}</code></td>
+      </tr>
+      <tr>
+        <td><span class="method m-get">GET</span></td>
+        <td class="endpoint">/documents</td>
+        <td>List all active documents for the current tenant. Returns metadata only, not chunk content.</td>
+        <td><code>[{"id": "...", "filename": "...", "version": 2}]</code></td>
+      </tr>
+      <tr>
+        <td><span class="method m-del">DELETE</span></td>
+        <td class="endpoint">/documents/{doc_id}</td>
+        <td>Soft-delete document — sets is_active=false on all Qdrant points and PostgreSQL parent chunks. Does not delete raw file.</td>
+        <td><code>{"status": "deactivated"}</code></td>
+      </tr>
+      <tr>
+        <td><span class="method m-get">GET</span></td>
+        <td class="endpoint">/health</td>
+        <td>Health check. Returns status of all downstream services: Postgres, Qdrant, Redis. No auth required.</td>
+        <td><code>{"status": "ok", "services": {...}}</code></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="callout c-info">
+    <strong>SSE Stream Format</strong> — /chat/stream sends three event types:<br>
+    <code>event: status · data: {"node": "retrieve", "message": "Searching 84 chunks..."}</code><br>
+    <code>event: token · data: {"text": "According to"}</code><br>
+    <code>event: done · data: {"answer": "...", "citations": [...], "trace_id": "...", "faithfulness": 0.94}</code>
+  </div>
+</section>
+
+<!-- ── 08 INGESTION CODE ── -->
+<section id="ingestion">
+  <div class="sec-ey"><span class="sec-num">SEC-08</span><span class="sec-tag">Code · Phase 1</span></div>
+  <div class="sec-title">Ingestion <em>Code Skeletons</em></div>
+  <div class="sec-lead">Key patterns for the ingestion pipeline. These are skeletons — fill in the implementation details, don't copy-paste blindly.</div>
+
+  <div class="code-wrap">
+    <div class="code-head">
+      <div class="code-file"><strong>app/ingestion/tasks.py</strong> — Celery task</div>
+      <div class="code-lang">Python</div>
+    </div>
+    <div class="code-body">
+<pre><span class="kw">from</span> app.core.celery_app <span class="kw">import</span> celery_app
+<span class="kw">from</span> app.ingestion.parser <span class="kw">import</span> parse_pdf_with_docling
+<span class="kw">from</span> app.ingestion.chunker <span class="kw">import</span> hierarchical_chunk
+<span class="kw">from</span> app.ingestion.embedder <span class="kw">import</span> embed_chunks
+<span class="kw">from</span> app.ingestion.upserter <span class="kw">import</span> upsert_to_qdrant
+
+<span class="dc">@celery_app.task(bind=True, max_retries=3, default_retry_delay=30)</span>
+<span class="kw">def</span> <span class="fn">ingest_document</span>(self, file_path: <span class="ty">str</span>, tenant_id: <span class="ty">str</span>, document_id: <span class="ty">str</span>):
+    <span class="kw">try</span>:
+        <span class="cm"># 1. Parse PDF with Docling (tables → markdown, OCR for scanned)</span>
+        pages = parse_pdf_with_docling(file_path)
+
+        <span class="cm"># 2. Hierarchical chunking: parent 1024t → child 256t</span>
+        parent_nodes, child_nodes = hierarchical_chunk(pages)
+
+        <span class="cm"># 3. Embed child chunks (dense + sparse)</span>
+        embedded_children = embed_chunks(child_nodes)
+
+        <span class="cm"># 4. Write parent chunks to PostgreSQL</span>
+        write_parent_chunks(parent_nodes, tenant_id, document_id)
+
+        <span class="cm"># 5. Upsert children to Qdrant with named vectors</span>
+        collection = f<span class="st">"tenant_{tenant_id}"</span>
+        upsert_to_qdrant(embedded_children, collection, document_id)
+
+        <span class="cm"># 6. Validate chunk count</span>
+        validate_chunk_count(collection, document_id, len(child_nodes))
+
+    <span class="kw">except</span> <span class="ty">Exception</span> <span class="kw">as</span> exc:
+        <span class="kw">raise</span> self.retry(exc=exc)</pre>
+    </div>
+  </div>
+
+  <div class="code-wrap">
+    <div class="code-head">
+      <div class="code-file"><strong>app/ingestion/upserter.py</strong> — Qdrant upsert with named vectors</div>
+      <div class="code-lang">Python</div>
+    </div>
+    <div class="code-body">
+<pre><span class="kw">from</span> qdrant_client.models <span class="kw">import</span> PointStruct, SparseVector
+
+<span class="kw">def</span> <span class="fn">build_point</span>(chunk, dense_vec, sparse_vec) -> <span class="ty">PointStruct</span>:
+    <span class="kw">return</span> PointStruct(
+        id=chunk.node_id,
+        vector={
+            <span class="st">"dense"</span>: dense_vec,             <span class="cm"># 1536-dim, openai/text-embedding-3-small via OpenRouter</span>
+            <span class="st">"bm25"</span>: SparseVector(           <span class="cm"># FastEmbed sparse</span>
+                indices=sparse_vec.indices,
+                values=sparse_vec.values
+            )
+        },
+        payload={
+            <span class="st">"tenant_id"</span>: chunk.tenant_id,
+            <span class="st">"document_id"</span>: chunk.doc_id,
+            <span class="st">"parent_id"</span>: chunk.parent_id,  <span class="cm"># key for parent fetch</span>
+            <span class="st">"doc_type"</span>: chunk.doc_type,
+            <span class="st">"page_num"</span>: chunk.page_num,
+            <span class="st">"chunk_index"</span>: chunk.index,
+            <span class="st">"is_active"</span>: <span class="ty">True</span>,              <span class="cm"># versioning flag</span>
+            <span class="st">"text_preview"</span>: chunk.text[:<span class="nu">200</span>]
+        }
+    )</pre>
+    </div>
+  </div>
+</section>
+
+<!-- ── 09 AGENT STATE ── -->
+<section id="agent">
+  <div class="sec-ey"><span class="sec-num">SEC-09</span><span class="sec-tag">Code · Phase 1</span></div>
+  <div class="sec-title">Agent State <em>&amp; Graph</em></div>
+
+  <div class="code-wrap">
+    <div class="code-head">
+      <div class="code-file"><strong>app/agent/state.py</strong> — LangGraph TypedDict</div>
+      <div class="code-lang">Python</div>
+    </div>
+    <div class="code-body">
+<pre><span class="kw">from</span> typing <span class="kw">import</span> TypedDict, Literal, Annotated
+<span class="kw">from</span> langgraph.graph.message <span class="kw">import</span> add_messages
+<span class="kw">from</span> langchain_core.messages <span class="kw">import</span> BaseMessage
+
+<span class="kw">class</span> <span class="ty">AgentState</span>(TypedDict):
+    <span class="cm"># ── Core query ──────────────────────────────</span>
+    query: <span class="ty">str</span>
+    tenant_id: <span class="ty">str</span>
+    collection: <span class="ty">str</span>                        <span class="cm"># Qdrant collection name</span>
+    query_type: <span class="ty">Literal</span>[<span class="st">"simple_factual"</span>, <span class="st">"multi_part"</span>, <span class="st">"procedural"</span>]
+    sub_questions: <span class="ty">list</span>[<span class="ty">str</span>]              <span class="cm"># decomposed sub-queries</span>
+    iteration: <span class="ty">int</span>                         <span class="cm"># retry counter, max 3</span>
+
+    <span class="cm"># ── Retrieval ───────────────────────────────</span>
+    retrieved_chunks: <span class="ty">list</span>[<span class="ty">dict</span>]          <span class="cm"># post-rerank top-8</span>
+    parent_chunks: <span class="ty">list</span>[<span class="ty">dict</span>]            <span class="cm"># 1024-token context</span>
+    context_score: <span class="ty">float</span>                  <span class="cm"># Gemini assessment 0-10</span>
+    context_reason: <span class="ty">str</span>                   <span class="cm"># used for reformulation</span>
+
+    <span class="cm"># ── Generation ──────────────────────────────</span>
+    final_answer: <span class="ty">str</span>
+    citations: <span class="ty">list</span>[<span class="ty">dict</span>]
+    faithfulness_score: <span class="ty">float</span>             <span class="cm"># Phase 2</span>
+
+    <span class="cm"># ── LangGraph ───────────────────────────────</span>
+    messages: Annotated[<span class="ty">list</span>[BaseMessage], add_messages]</pre>
+    </div>
+  </div>
+
+  <div class="code-wrap">
+    <div class="code-head">
+      <div class="code-file"><strong>app/agent/graph.py</strong> — LangGraph StateGraph wiring</div>
+      <div class="code-lang">Python</div>
+    </div>
+    <div class="code-body">
+<pre><span class="kw">from</span> langgraph.graph <span class="kw">import</span> StateGraph, END
+<span class="kw">from</span> app.agent.state <span class="kw">import</span> AgentState
+<span class="kw">from</span> app.agent.nodes <span class="kw">import</span> (
+    classify_query, decompose_question, retrieve,
+    rerank, parent_fetch, assess_context,
+    reformulate_query, generate_answer, faithfulness_check
+)
+
+<span class="kw">def</span> <span class="fn">build_graph</span>() -> <span class="ty">StateGraph</span>:
+    g = StateGraph(AgentState)
+
+    <span class="cm"># ── Add nodes ──────────────────────────────</span>
+    g.add_node(<span class="st">"classify"</span>, classify_query)
+    g.add_node(<span class="st">"decompose"</span>, decompose_question)
+    g.add_node(<span class="st">"retrieve"</span>, retrieve)
+    g.add_node(<span class="st">"rerank"</span>, rerank)
+    g.add_node(<span class="st">"parent_fetch"</span>, parent_fetch)
+    g.add_node(<span class="st">"assess"</span>, assess_context)
+    g.add_node(<span class="st">"reformulate"</span>, reformulate_query)
+    g.add_node(<span class="st">"generate"</span>, generate_answer)
+    g.add_node(<span class="st">"faithfulness"</span>, faithfulness_check)  <span class="cm"># Phase 2</span>
+
+    <span class="cm"># ── Entry ──────────────────────────────────</span>
+    g.set_entry_point(<span class="st">"classify"</span>)
+
+    <span class="cm"># ── Classify routing ───────────────────────</span>
+    g.add_conditional_edges(<span class="st">"classify"</span>, <span class="kw">lambda</span> s: s[<span class="st">"query_type"</span>], {
+        <span class="st">"multi_part"</span>: <span class="st">"decompose"</span>,
+        <span class="st">"simple_factual"</span>: <span class="st">"retrieve"</span>,
+        <span class="st">"procedural"</span>: <span class="st">"retrieve"</span>
+    })
+    g.add_edge(<span class="st">"decompose"</span>, <span class="st">"retrieve"</span>)
+    g.add_edge(<span class="st">"retrieve"</span>, <span class="st">"rerank"</span>)
+    g.add_edge(<span class="st">"rerank"</span>, <span class="st">"parent_fetch"</span>)
+    g.add_edge(<span class="st">"parent_fetch"</span>, <span class="st">"assess"</span>)
+
+    <span class="cm"># ── Assess routing ─────────────────────────</span>
+    <span class="kw">def</span> <span class="fn">route_assess</span>(state: AgentState) -> <span class="ty">str</span>:
+        <span class="kw">if</span> state[<span class="st">"context_score"</span>] >= <span class="nu">7</span>:
+            <span class="kw">return</span> <span class="st">"generate"</span>
+        <span class="kw">if</span> state[<span class="st">"iteration"</span>] < <span class="nu">3</span>:
+            <span class="kw">return</span> <span class="st">"reformulate"</span>
+        <span class="kw">return</span> <span class="st">"generate"</span>          <span class="cm"># best-effort after max iterations</span>
+
+    g.add_conditional_edges(<span class="st">"assess"</span>, route_assess)
+    g.add_edge(<span class="st">"reformulate"</span>, <span class="st">"retrieve"</span>)  <span class="cm"># loop back</span>
+    g.add_edge(<span class="st">"generate"</span>, <span class="st">"faithfulness"</span>)
+    g.add_edge(<span class="st">"faithfulness"</span>, END)
+
+    <span class="kw">return</span> g.compile()</pre>
+    </div>
+  </div>
+</section>
+
+<!-- ── 10 RETRIEVAL ── -->
+<section id="retrieval">
+  <div class="sec-ey"><span class="sec-num">SEC-10</span><span class="sec-tag">Code · Phase 1</span></div>
+  <div class="sec-title">Hybrid <em>Retrieval</em></div>
+
+  <div class="code-wrap">
+    <div class="code-head">
+      <div class="code-file"><strong>app/retrieval/hybrid_search.py</strong> — Qdrant prefetch + RRF</div>
+      <div class="code-lang">Python</div>
+    </div>
+    <div class="code-body">
+<pre><span class="kw">from</span> qdrant_client.models <span class="kw">import</span> (
+    Prefetch, Query, Fusion, Filter, FieldCondition, MatchValue
+)
+
+<span class="kw">async def</span> <span class="fn">hybrid_search</span>(
+    query_text: <span class="ty">str</span>,
+    tenant_id: <span class="ty">str</span>,
+    collection: <span class="ty">str</span>,
+    limit: <span class="ty">int</span> = <span class="nu">30</span>
+) -> <span class="ty">list</span>:
+
+    <span class="cm"># Embed query — dense</span>
+    dense_vec = <span class="kw">await</span> openai_embed(query_text)
+    <span class="cm"># Embed query — sparse</span>
+    sparse_vec = bm25_embed(query_text)
+
+    <span class="cm"># Qdrant tenant + version filter</span>
+    tenant_filter = Filter(must=[
+        FieldCondition(key=<span class="st">"tenant_id"</span>, match=MatchValue(value=tenant_id)),
+        FieldCondition(key=<span class="st">"is_active"</span>, match=MatchValue(value=<span class="ty">True</span>))
+    ])
+
+    results = qdrant_client.query_points(
+        collection_name=collection,
+        prefetch=[
+            Prefetch(query=dense_vec, using=<span class="st">"dense"</span>,
+                     filter=tenant_filter, limit=limit),
+            Prefetch(query=sparse_vec, using=<span class="st">"bm25"</span>,
+                     filter=tenant_filter, limit=limit),
+        ],
+        query=Query(fusion=Fusion.RRF),  <span class="cm"># Reciprocal Rank Fusion</span>
+        limit=limit,
+        with_payload=<span class="ty">True</span>
+    )
+    <span class="kw">return</span> results.points</pre>
+    </div>
+  </div>
+
+  <div class="code-wrap">
+    <div class="code-head">
+      <div class="code-file"><strong>app/retrieval/cache.py</strong> — Redis semantic cache</div>
+      <div class="code-lang">Python</div>
+    </div>
+    <div class="code-body">
+<pre><span class="kw">import</span> redis, json, numpy <span class="kw">as</span> np
+<span class="kw">from</span> app.core.config <span class="kw">import</span> settings
+
+cache_redis = redis.Redis.from_url(settings.SEMANTIC_CACHE_REDIS_URL)
+
+<span class="kw">async def</span> <span class="fn">check_cache</span>(query: <span class="ty">str</span>, tenant_id: <span class="ty">str</span>) -> <span class="ty">dict</span> | <span class="ty">None</span>:
+    query_vec = <span class="kw">await</span> openai_embed(query)
+    cache_keys = cache_redis.keys(f<span class="st">"cache:{tenant_id}:*"</span>)
+
+    <span class="kw">for</span> key <span class="kw">in</span> cache_keys:
+        entry = json.loads(cache_redis.get(key))
+        cached_vec = np.array(entry[<span class="st">"embedding"</span>])
+        similarity = np.dot(query_vec, cached_vec) / (
+            np.linalg.norm(query_vec) * np.linalg.norm(cached_vec)
+        )
+        <span class="kw">if</span> similarity >= settings.CACHE_SIMILARITY_THRESHOLD:  <span class="cm"># 0.88</span>
+            <span class="kw">return</span> entry[<span class="st">"response"</span>]
+    <span class="kw">return</span> <span class="ty">None</span>
+
+<span class="kw">def</span> <span class="fn">write_cache</span>(query: <span class="ty">str</span>, embedding, response: <span class="ty">dict</span>, tenant_id: <span class="ty">str</span>):
+    key = f<span class="st">"cache:{tenant_id}:{hash(query)}"</span>
+    cache_redis.setex(key, settings.CACHE_TTL_SECONDS, json.dumps({
+        <span class="st">"embedding"</span>: embedding,
+        <span class="st">"response"</span>: response
+    }))</pre>
+    </div>
+  </div>
+</section>
+
+<!-- ── 11 RERANKER ── -->
+<section id="reranker">
+  <div class="sec-ey"><span class="sec-num">SEC-11</span><span class="sec-tag">Code · Phase 2</span></div>
+  <div class="sec-title">Local <em>BGE Reranker</em></div>
+
+  <div class="code-wrap">
+    <div class="code-head">
+      <div class="code-file"><strong>app/retrieval/bge_reranker.py</strong> — in-process local reranker</div>
+      <div class="code-lang">Python</div>
+    </div>
+    <div class="code-body">
+<pre><span class="kw">from</span> transformers <span class="kw">import</span> AutoTokenizer, AutoModelForSequenceClassification
+<span class="kw">import</span> torch
+
+<span class="cm"># Load once on startup — cached for lifetime of worker process</span>
+_tokenizer = <span class="ty">None</span>
+_model = <span class="ty">None</span>
+
+<span class="kw">def</span> <span class="fn">_load_model</span>():
+    <span class="kw">global</span> _tokenizer, _model
+    <span class="kw">if</span> _model <span class="kw">is None</span>:
+        model_name = <span class="st">"BAAI/bge-reranker-v2-m3"</span>
+        _tokenizer = AutoTokenizer.from_pretrained(model_name)
+        _model = AutoModelForSequenceClassification.from_pretrained(model_name)
+        _model.eval()
+    <span class="kw">return</span> _tokenizer, _model
+
+<span class="kw">def</span> <span class="fn">rerank_chunks</span>(query: <span class="ty">str</span>, chunks: <span class="ty">list</span>, top_k: <span class="ty">int</span> = <span class="nu">8</span>) -> <span class="ty">list</span>:
+    tokenizer, model = _load_model()
+    pairs = [(query, c[<span class="st">"text_preview"</span>]) <span class="kw">for</span> c <span class="kw">in</span> chunks]
+
+    <span class="kw">with</span> torch.no_grad():
+        inputs = tokenizer(pairs, padding=<span class="ty">True</span>, truncation=<span class="ty">True</span>,
+                           max_length=<span class="nu">512</span>, return_tensors=<span class="st">"pt"</span>)
+        scores = model(**inputs).logits.squeeze(-<span class="nu">1</span>).tolist()
+
+    ranked = sorted(zip(chunks, scores), key=<span class="kw">lambda</span> x: x[<span class="nu">1</span>], reverse=<span class="ty">True</span>)
+    <span class="kw">return</span> [chunk <span class="kw">for</span> chunk, _ <span class="kw">in</span> ranked[:top_k]]</pre>
+    </div>
+  </div>
+</section>
+
+<!-- ── 12 FAITHFULNESS ── -->
+<section id="faithfulness">
+  <div class="sec-ey"><span class="sec-num">SEC-12</span><span class="sec-tag">Code · Phase 2</span></div>
+  <div class="sec-title">Faithfulness <em>Check Node</em></div>
+
+  <div class="code-wrap">
+    <div class="code-head">
+      <div class="code-file"><strong>app/agent/nodes/faithfulness.py</strong> — post-generation verification</div>
+      <div class="code-lang">Python</div>
+    </div>
+    <div class="code-body">
+<pre><span class="kw">import</span> json
+<span class="kw">from</span> app.agent.state <span class="kw">import</span> AgentState
+<span class="kw">from</span> app.core.config <span class="kw">import</span> settings
+<span class="kw">from</span> app.core.llm <span class="kw">import</span> get_async_openai_client   <span class="cm"># OpenRouter-backed</span>
+
+FAITHFULNESS_PROMPT = <span class="st">"""
+You are a faithfulness verifier. Given an answer and source chunks,
+check if every factual claim in the answer is supported by the sources.
+
+Answer: {answer}
+
+Source chunks:
+{sources}
+
+Respond ONLY with valid JSON:
+{{"faithfulness_score": 0.0-1.0, "unsupported_claims": ["..."]}}
+"""</span>
+
+<span class="kw">async def</span> <span class="fn">faithfulness_check</span>(state: AgentState) -> AgentState:
+    sources_text = <span class="st">"\n---\n"</span>.join(
+        c[<span class="st">"text"</span>] <span class="kw">for</span> c <span class="kw">in</span> state[<span class="st">"parent_chunks"</span>]
+    )
+    prompt = FAITHFULNESS_PROMPT.format(
+        answer=state[<span class="st">"final_answer"</span>],
+        sources=sources_text
+    )
+
+    client = get_async_openai_client()
+    response = <span class="kw">await</span> client.chat.completions.create(
+        model=<span class="st">"google/gemini-2.5-flash"</span>,           <span class="cm"># or settings.LLM_MODEL_ASSESS</span>
+        messages=[{<span class="st">"role"</span>: <span class="st">"user"</span>, <span class="st">"content"</span>: prompt}],
+        temperature=<span class="nu">0</span>,
+        response_format={<span class="st">"type"</span>: <span class="st">"json_object"</span>},
+    )
+    result = json.loads(response.choices[<span class="nu">0</span>].message.content)
+    score = result[<span class="st">"faithfulness_score"</span>]
+
+    <span class="cm"># Regenerate if score is too low</span>
+    <span class="kw">if</span> score < <span class="nu">0.85</span>:
+        <span class="cm"># Trigger stricter regeneration (add unsupported claims to prompt)</span>
+        state = <span class="kw">await</span> regenerate_with_constraints(state, result[<span class="st">"unsupported_claims"</span>])
+
+    <span class="kw">return</span> {**state, <span class="st">"faithfulness_score"</span>: score}</pre>
+    </div>
+  </div>
+</section>
+
+<!-- ── 13 LANGFUSE ── -->
+<section id="langfuse">
+  <div class="sec-ey"><span class="sec-num">SEC-13</span><span class="sec-tag">Code · Phase 2</span></div>
+  <div class="sec-title">Langfuse <em>Tracing</em></div>
+
+  <div class="code-wrap">
+    <div class="code-head">
+      <div class="code-file"><strong>app/agent/nodes/retrieve.py</strong> — @observe() pattern on a node</div>
+      <div class="code-lang">Python</div>
+    </div>
+    <div class="code-body">
+<pre><span class="kw">from</span> langfuse.decorators <span class="kw">import</span> observe, langfuse_context
+<span class="kw">from</span> app.agent.state <span class="kw">import</span> AgentState
+<span class="kw">from</span> app.retrieval.hybrid_search <span class="kw">import</span> hybrid_search
+
+<span class="dc">@observe(name="retrieve_node")</span>  <span class="cm"># every call creates a span in Langfuse</span>
+<span class="kw">async def</span> <span class="fn">retrieve</span>(state: AgentState) -> AgentState:
+    query = state[<span class="st">"query"</span>]
+    results = <span class="kw">await</span> hybrid_search(
+        query_text=query,
+        tenant_id=state[<span class="st">"tenant_id"</span>],
+        collection=state[<span class="st">"collection"</span>]
+    )
+
+    <span class="cm"># Log retrieval metadata to current Langfuse span</span>
+    langfuse_context.update_current_observation(
+        input={<span class="st">"query"</span>: query},
+        output={<span class="st">"result_count"</span>: len(results)},
+        metadata={
+            <span class="st">"top_scores"</span>: [r.score <span class="kw">for</span> r <span class="kw">in</span> results[:<span class="nu">5</span>]],
+            <span class="st">"collection"</span>: state[<span class="st">"collection"</span>]
+        }
+    )
+    <span class="kw">return</span> {**state, <span class="st">"retrieved_chunks"</span>: [r.payload <span class="kw">for</span> r <span class="kw">in</span> results]}</pre>
+    </div>
+  </div>
+
+  <div class="callout c-info">
+    <strong>Apply @observe() to every node:</strong> classify, decompose, retrieve, rerank, parent_fetch, assess, generate, faithfulness. Each becomes a span in the Langfuse trace tree. The full trace shows you exactly which node took how long and what data flowed through it. This is the single most valuable debugging tool in the entire system.
+  </div>
+</section>
+
+<!-- ── 14 SETUP ── -->
+<section id="setup">
+  <div class="sec-ey"><span class="sec-num">SEC-14</span><span class="sec-tag">Getting Started</span></div>
+  <div class="sec-title">Step-by-Step <em>Setup</em></div>
+  <div class="sec-lead">From zero to running stack. Follow in order. Don't skip the verification steps — each one confirms the previous step actually worked.</div>
+
+  <div class="setup-grid">
+    <div class="setup-step">
+      <div class="ss-head"><div class="ss-num">1</div><div class="ss-title">Clone & Create Project Structure</div><div class="ss-est">~10 min</div></div>
+      <div class="ss-body">
+        <code class="ss-cmd">mkdir agentic-rag && cd agentic-rag
+mkdir -p app/{api,agent/nodes,ingestion,retrieval,db,core,observability}
+mkdir -p migrations/versions scripts tests data/{uploads,eval}
+touch docker-compose.yml Dockerfile .env .env.example Makefile pyproject.toml</code>
+      </div>
+    </div>
+    <div class="setup-step">
+      <div class="ss-head"><div class="ss-num">2</div><div class="ss-title">Write pyproject.toml with all dependencies</div><div class="ss-est">~15 min</div></div>
+      <div class="ss-body">
+        <div class="ss-note">Key dependencies to include:</div>
+        <code class="ss-cmd">fastapi uvicorn[standard] celery[redis]
+langchain langgraph langchain-openai langchain-google-genai
+qdrant-client llama-index llama-index-readers-docling
+fastembed openai ragas langfuse
+transformers torch sentence-transformers
+sqlalchemy[asyncio] asyncpg alembic psycopg2-binary
+redis pyjwt[crypto] logto python-multipart
+pydantic-settings pytest httpx</code>
+        <div class="ss-note" style="margin-top:8px">Install: <code>pip install -e ".[dev]"</code> or use uv: <code>uv sync</code></div>
+      </div>
+    </div>
+    <div class="setup-step">
+      <div class="ss-head"><div class="ss-num">3</div><div class="ss-title">Fill in .env file</div><div class="ss-est">~5 min</div></div>
+      <div class="ss-body">
+        <div class="ss-note">Copy .env.example → .env. Fill in required values (see Section 05).</div>
+        <div class="ss-note" style="margin-top:6px"><strong>Logto setup (one-time, in Logto Console):</strong></div>
+        <code class="ss-cmd"># 1. Create an API resource → identifier becomes LOGTO_RESOURCE
+# 2. Create a Machine-to-Machine app  → copy App ID / App Secret
+# 3. (Optional) Create an Organization per tenant — its ID becomes tenant_id
+# 4. Paste LOGTO_ENDPOINT / LOGTO_RESOURCE / LOGTO_APP_ID / LOGTO_APP_SECRET into .env</code>
+        <div class="ss-note" style="margin-top:6px">Add your OPENROUTER_API_KEY (single key handles every model). All other values can stay as defaults for local dev.</div>
+      </div>
+    </div>
+    <div class="setup-step">
+      <div class="ss-head"><div class="ss-num">4</div><div class="ss-title">Start the stack</div><div class="ss-est">~5 min (first run: longer for image pulls)</div></div>
+      <div class="ss-body">
+        <code class="ss-cmd">docker compose up -d postgres redis qdrant
+# Wait ~10s for postgres to be ready, then:
+docker compose up -d api worker</code>
+        <div class="ss-note">Verify: <code>curl http://localhost:8000/health</code> → should return all services OK. Qdrant UI: <code>http://localhost:6333/dashboard</code></div>
+      </div>
+    </div>
+    <div class="setup-step">
+      <div class="ss-head"><div class="ss-num">5</div><div class="ss-title">Run database migrations</div><div class="ss-est">~5 min</div></div>
+      <div class="ss-body">
+        <code class="ss-cmd">docker compose exec api alembic upgrade head
+# Verify tables exist:
+docker compose exec postgres psql -U raguser -d ragdb -c "\dt"</code>
+      </div>
+    </div>
+    <div class="setup-step">
+      <div class="ss-head"><div class="ss-num">6</div><div class="ss-title">Create tenant + Qdrant collection</div><div class="ss-est">~5 min</div></div>
+      <div class="ss-body">
+        <code class="ss-cmd">docker compose exec api python scripts/seed_tenant.py \
+  --name "myproject" --logto-org-id "&lt;ORG_ID_FROM_LOGTO&gt;"
+# Outputs: tenant_id (= the Logto organization_id you passed)
+
+docker compose exec api python scripts/create_collections.py --tenant-id myproject
+# Creates: tenant_myproject collection in Qdrant with named vector config
+
+# Get a test access token from Logto (M2M app):
+curl -X POST $LOGTO_ENDPOINT/oidc/token \
+  -d "grant_type=client_credentials" \
+  -d "scope=&lt;your-api-scope&gt;" \
+  -d "resource=$LOGTO_RESOURCE" \
+  -d "organization_id=&lt;ORG_ID_FROM_LOGTO&gt;" \
+  -u "$LOGTO_APP_ID:$LOGTO_APP_SECRET"
+# Save the access_token from the response — use it as YOUR_LOGTO_TOKEN below</code>
+      </div>
+    </div>
+    <div class="setup-step">
+      <div class="ss-head"><div class="ss-num">7</div><div class="ss-title">Ingest a test PDF</div><div class="ss-est">~2 min</div></div>
+      <div class="ss-body">
+        <code class="ss-cmd">curl -X POST http://localhost:8000/ingest \
+  -H "Authorization: Bearer YOUR_LOGTO_TOKEN" \
+  -F "file=@/path/to/your.pdf"
+# Returns: {"task_id": "...", "status": "queued"}
+
+# Poll until done:
+curl http://localhost:8000/ingest/status/TASK_ID \
+  -H "Authorization: Bearer YOUR_LOGTO_TOKEN"</code>
+      </div>
+    </div>
+    <div class="setup-step">
+      <div class="ss-head"><div class="ss-num">8</div><div class="ss-title">Ask your first question</div><div class="ss-est">~30 seconds</div></div>
+      <div class="ss-body">
+        <code class="ss-cmd">curl -X POST http://localhost:8000/chat/stream \
+  -H "Authorization: Bearer YOUR_LOGTO_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "Summarize the key points in the document"}' \
+  --no-buffer</code>
+        <div class="ss-note">You should see SSE events streaming: status → tokens → done with citations. If you see the full answer: ✅ Phase 1 is working.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── 15 DEV COMMANDS ── -->
+<section id="commands">
+  <div class="sec-ey"><span class="sec-num">SEC-15</span><span class="sec-tag">Developer Experience</span></div>
+  <div class="sec-title">Dev <em>Commands</em></div>
+  <div class="sec-lead">Put these in your <code>Makefile</code>. One-word commands for everything you do repeatedly.</div>
+
+  <div class="code-wrap">
+    <div class="code-head">
+      <div class="code-file"><strong>Makefile</strong></div>
+      <div class="code-lang">Make</div>
+    </div>
+    <div class="code-body">
+<pre><span class="fn">up</span>:          docker compose up -d
+<span class="fn">down</span>:        docker compose down
+<span class="fn">logs</span>:        docker compose logs -f api worker
+<span class="fn">worker-logs</span>: docker compose logs -f worker
+
+<span class="fn">migrate</span>:     docker compose exec api alembic upgrade head
+<span class="fn">migration</span>:   docker compose exec api alembic revision --autogenerate -m "$(msg)"
+
+<span class="fn">shell</span>:       docker compose exec api python
+<span class="fn">psql</span>:        docker compose exec postgres psql -U raguser -d ragdb
+
+<span class="fn">test</span>:        docker compose exec api pytest tests/ -v
+<span class="fn">test-ingest</span>: docker compose exec api pytest tests/test_ingestion.py -v
+
+<span class="cm"># Phase 2</span>
+<span class="fn">eval</span>:        docker compose exec api python scripts/run_eval.py
+<span class="fn">langfuse</span>:    open http://localhost:3000
+
+<span class="fn">qdrant-ui</span>:   open http://localhost:6333/dashboard
+<span class="fn">api-docs</span>:    open http://localhost:8000/docs
+
+<span class="fn">clean</span>:       docker compose down -v  <span class="cm"># WARNING: destroys all volumes</span>
+<span class="fn">rebuild</span>:     docker compose build --no-cache api worker</pre>
+    </div>
+  </div>
+
+  <div class="callout c-ok">
+    <strong>You're ready to build.</strong> Start with Phase 1 — scaffold, infrastructure, ingestion, then agent loop. The folder structure is your roadmap: each file listed in Section 03 is something you need to write. Do them in dependency order: core/ first, then db/, then ingestion/, then agent/. Don't start with the coolest part — start with the plumbing.
+  </div>
+</section>
+
+<div class="footer">
+  <span>Agentic RAG · Build Guide & Code Architecture · Artifact 02 of 03</span>
+  <span>Next: Artifact 03 — Example Document & Working Demo</span>
+</div>
+
+</main>
+
+<script>
+const sections = document.querySelectorAll('section[id]');
+const links = document.querySelectorAll('.na[href^="#"]');
+const obs = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if(e.isIntersecting){
+      links.forEach(l => l.classList.remove('active'));
+      const l = document.querySelector(`.na[href="#${e.target.id}"]`);
+      if(l) l.classList.add('active');
+    }
+  });
+}, {threshold:0.12, rootMargin:'-50px 0px -55% 0px'});
+sections.forEach(s => obs.observe(s));
+</script>
+</body>
+</html>

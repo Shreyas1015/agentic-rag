@@ -1,0 +1,1012 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Agentic RAG — Architecture Decision Record</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;1,400&family=DM+Sans:wght@400;500;600;700&family=Fraunces:wght@700;800;900&display=swap');
+
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#04090f;--s1:#070d17;--s2:#0a1220;--s3:#0d1828;--s4:#111f32;
+  --b1:#162336;--b2:#1c2e45;--b3:#233858;
+  --blue:#4f8ef7;--bdim:rgba(79,142,247,.09);--bmid:rgba(79,142,247,.2);
+  --teal:#26d9c7;--tdim:rgba(38,217,199,.07);--tmid:rgba(38,217,199,.2);
+  --purple:#b197fc;--pdim:rgba(177,151,252,.07);--pmid:rgba(177,151,252,.2);
+  --gold:#f6a623;--gdim:rgba(246,166,35,.07);--gmid:rgba(246,166,35,.22);
+  --green:#3ecf8e;--grdim:rgba(62,207,142,.07);--grmid:rgba(62,207,142,.2);
+  --red:#f16060;--rdim:rgba(241,96,96,.08);--rmid:rgba(241,96,96,.2);
+  --orange:#f97a3a;--odim:rgba(249,122,58,.08);
+  --w:#edf2f7;--g1:#bfccd9;--g2:#7f96ae;--g3:#4a6177;--g4:#1e3048;
+  --fh:'Fraunces',serif;
+  --fm:'JetBrains Mono',monospace;
+  --fb:'DM Sans',sans-serif;
+  --nav:260px;
+}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--w);font-family:var(--fb);font-size:14px;line-height:1.75;display:flex;min-height:100vh}
+
+/* ── NAV ── */
+nav{width:var(--nav);min-height:100vh;background:var(--s1);border-right:1px solid var(--b1);position:fixed;top:0;left:0;overflow-y:auto;z-index:50;display:flex;flex-direction:column}
+nav::-webkit-scrollbar{width:3px}nav::-webkit-scrollbar-thumb{background:var(--b3)}
+.nb{padding:22px 18px 16px;border-bottom:1px solid var(--b1)}
+.nb-tag{font-size:9px;font-weight:700;letter-spacing:3px;color:var(--gold);text-transform:uppercase;margin-bottom:7px;font-family:var(--fm)}
+.nb-title{font-size:15px;font-weight:700;color:var(--w);line-height:1.3;margin-bottom:3px;font-family:var(--fh)}
+.nb-sub{font-size:10px;color:var(--g3);line-height:1.5}
+.ng{padding:14px 18px 4px;font-size:9px;font-weight:700;letter-spacing:2px;color:var(--g4);text-transform:uppercase;font-family:var(--fm)}
+.na{display:flex;align-items:center;gap:9px;padding:7px 18px;color:var(--g2);font-size:11.5px;border-left:2px solid transparent;cursor:pointer;transition:all .15s;line-height:1.4;text-decoration:none}
+.na:hover{color:var(--w);background:var(--s2);border-left-color:var(--gold)}
+.na.active{color:var(--gold);background:var(--gdim);border-left-color:var(--gold);font-weight:600}
+.nn{font-size:9px;color:var(--g4);min-width:16px;font-family:var(--fm)}
+.na-pip{width:5px;height:5px;border-radius:50%;background:currentColor;opacity:.55;flex-shrink:0}
+
+/* ── MAIN ── */
+main{margin-left:var(--nav);flex:1;min-width:0}
+
+/* ── HERO ── */
+.hero{padding:56px 52px 48px;border-bottom:1px solid var(--b1);position:relative;overflow:hidden;background:var(--s1)}
+.hero::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 80% 60% at 70% 0%,rgba(79,142,247,.07) 0%,transparent 60%),radial-gradient(ellipse 50% 40% at 10% 100%,rgba(246,166,35,.06) 0%,transparent 60%)}
+.h-series{display:inline-flex;align-items:center;gap:10px;margin-bottom:20px}
+.h-series-label{font-family:var(--fm);font-size:9px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:var(--g3)}
+.h-series-divider{width:24px;height:1px;background:var(--b3)}
+.h-series-id{font-family:var(--fm);font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--gold)}
+.h-title{font-size:44px;font-weight:900;line-height:1.05;color:var(--w);margin-bottom:12px;font-family:var(--fh)}
+.h-title em{color:var(--gold);font-style:normal}
+.h-sub{color:var(--g2);font-size:13.5px;margin-bottom:28px;max-width:660px;line-height:1.75}
+.chips{display:flex;flex-wrap:wrap;gap:7px}
+.chip{padding:4px 13px;border-radius:100px;font-size:10.5px;font-weight:500;border:1px solid;font-family:var(--fm)}
+.c-g{background:var(--gdim);border-color:var(--gmid);color:var(--gold)}
+.c-b{background:var(--bdim);border-color:var(--bmid);color:var(--blue)}
+.c-t{background:var(--tdim);border-color:var(--tmid);color:var(--teal)}
+.c-p{background:var(--pdim);border-color:var(--pmid);color:var(--purple)}
+.c-gr{background:var(--grdim);border-color:var(--grmid);color:var(--green)}
+.c-r{background:var(--rdim);border-color:var(--rmid);color:var(--red)}
+
+/* ── STATS BAR ── */
+.statsbar{display:grid;grid-template-columns:repeat(6,1fr);background:var(--s1);border-bottom:1px solid var(--b1)}
+.sb{padding:18px 16px;border-right:1px solid var(--b1);text-align:center}
+.sb:last-child{border-right:none}
+.sb-val{font-family:var(--fh);font-size:22px;font-weight:800;line-height:1;margin-bottom:5px}
+.sb-label{font-family:var(--fm);font-size:9px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:var(--g3)}
+.sv-gold{color:var(--gold)}.sv-green{color:var(--green)}.sv-blue{color:var(--blue)}.sv-teal{color:var(--teal)}.sv-purple{color:var(--purple)}.sv-red{color:var(--red)}
+
+/* ── SECTIONS ── */
+section{padding:48px 52px;border-bottom:1px solid var(--b1);scroll-margin-top:20px}
+section:last-child{border-bottom:none;padding-bottom:80px}
+.sec-eyebrow{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+.sec-num{font-family:var(--fm);font-size:9px;font-weight:700;letter-spacing:2px;color:var(--gold);background:var(--gdim);border:1px solid var(--gmid);padding:4px 10px;border-radius:6px;text-transform:uppercase}
+.sec-tag{font-family:var(--fm);font-size:9px;font-weight:700;letter-spacing:2px;color:var(--g3);text-transform:uppercase}
+.sec-title{font-size:28px;font-weight:800;color:var(--w);line-height:1.15;font-family:var(--fh);margin-bottom:8px}
+.sec-title em{color:var(--gold);font-style:normal}
+.sec-lead{color:var(--g2);font-size:13px;max-width:720px;line-height:1.75;margin-bottom:30px}
+
+/* ── FINAL STACK TABLE ── */
+.stack-grid{display:grid;gap:0;border:1px solid var(--b2);border-radius:12px;overflow:hidden}
+.stack-hdr{display:grid;grid-template-columns:160px 1fr 140px 120px;background:var(--s3);padding:10px 18px;border-bottom:1px solid var(--b2)}
+.stack-hdr span{font-family:var(--fm);font-size:9px;font-weight:700;letter-spacing:2px;color:var(--g3);text-transform:uppercase}
+.stack-group{border-bottom:1px solid var(--b1)}
+.stack-group:last-child{border-bottom:none}
+.stack-group-label{padding:8px 18px;background:var(--s2);font-family:var(--fm);font-size:9px;font-weight:700;letter-spacing:2px;color:var(--g3);text-transform:uppercase;border-bottom:1px solid var(--b1)}
+.stack-row{display:grid;grid-template-columns:160px 1fr 140px 120px;padding:13px 18px;border-bottom:1px solid var(--b1);align-items:start;transition:background .15s}
+.stack-row:last-child{border-bottom:none}
+.stack-row:hover{background:var(--s2)}
+.sr-layer{font-family:var(--fm);font-size:11px;color:var(--g2);font-weight:500}
+.sr-tech{font-weight:700;font-size:13px;color:var(--w);font-family:var(--fb);margin-bottom:2px}
+.sr-why{font-size:11.5px;color:var(--g2);line-height:1.6}
+.sr-badge{font-family:var(--fm);font-size:10px;font-weight:700;padding:3px 8px;border-radius:100px}
+.badge-keep{background:var(--grdim);border:1px solid var(--grmid);color:var(--green)}
+.badge-new{background:var(--bdim);border:1px solid var(--bmid);color:var(--blue)}
+.badge-changed{background:var(--gdim);border:1px solid var(--gmid);color:var(--gold)}
+.badge-removed{background:var(--rdim);border:1px solid var(--rmid);color:var(--red)}
+.sr-port{font-family:var(--fm);font-size:10px;color:var(--g3)}
+
+/* ── ADR CARDS ── */
+.adr-grid{display:grid;gap:14px}
+.adr-card{background:var(--s2);border:1px solid var(--b2);border-radius:12px;overflow:hidden}
+.adr-top{padding:18px 22px 14px;border-bottom:1px solid var(--b1)}
+.adr-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:8px}
+.adr-id{font-family:var(--fm);font-size:9px;font-weight:700;color:var(--g3);letter-spacing:2px}
+.adr-title{font-size:14px;font-weight:700;color:var(--w);font-family:var(--fb);margin-bottom:4px}
+.adr-status{font-family:var(--fm);font-size:9px;font-weight:700;padding:3px 9px;border-radius:100px}
+.status-accepted{background:var(--grdim);border:1px solid var(--grmid);color:var(--green)}
+.status-superseded{background:var(--rdim);border:1px solid var(--rmid);color:var(--red)}
+.status-updated{background:var(--gdim);border:1px solid var(--gmid);color:var(--gold)}
+.adr-decision{font-size:12.5px;color:var(--g1);line-height:1.7}
+.adr-body{display:grid;grid-template-columns:1fr 1fr 1fr;border-top:1px solid var(--b1)}
+.adr-col{padding:14px 18px;border-right:1px solid var(--b1)}
+.adr-col:last-child{border-right:none}
+.adr-col-label{font-family:var(--fm);font-size:9px;font-weight:700;letter-spacing:2px;color:var(--g3);text-transform:uppercase;margin-bottom:8px}
+.adr-col-body{font-size:11.5px;color:var(--g2);line-height:1.65}
+.adr-col-body code{font-family:var(--fm);font-size:10.5px;background:var(--s3);padding:1px 5px;border-radius:3px;color:var(--teal)}
+.adr-col-body strong{color:var(--w);font-weight:600}
+
+/* ── PIPELINE FLOW ── */
+.pipeline{display:flex;flex-direction:column;gap:0}
+.pipe-group{margin-bottom:28px}
+.pipe-group-title{font-family:var(--fm);font-size:9px;font-weight:700;letter-spacing:3px;color:var(--gold);text-transform:uppercase;margin-bottom:14px;display:flex;align-items:center;gap:10px}
+.pipe-group-title::after{content:'';flex:1;height:1px;background:var(--b2)}
+.pipe-nodes{display:flex;flex-wrap:wrap;gap:10px;align-items:stretch}
+.pipe-node{background:var(--s2);border:1px solid var(--b2);border-radius:10px;padding:14px 16px;flex:1;min-width:180px;position:relative}
+.pipe-node.highlight{border-color:var(--gold);background:var(--gdim)}
+.pipe-node.highlight-blue{border-color:var(--blue);background:var(--bdim)}
+.pipe-node.highlight-green{border-color:var(--green);background:var(--grdim)}
+.pipe-node.highlight-teal{border-color:var(--teal);background:var(--tdim)}
+.pipe-node.highlight-purple{border-color:var(--purple);background:var(--pdim)}
+.pn-label{font-family:var(--fm);font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:6px}
+.pipe-node.highlight .pn-label{color:var(--gold)}
+.pipe-node.highlight-blue .pn-label{color:var(--blue)}
+.pipe-node.highlight-green .pn-label{color:var(--green)}
+.pipe-node.highlight-teal .pn-label{color:var(--teal)}
+.pipe-node.highlight-purple .pn-label{color:var(--purple)}
+.pn-label-default{color:var(--g3)}
+.pn-tech{font-size:12.5px;font-weight:700;color:var(--w);margin-bottom:4px;font-family:var(--fb)}
+.pn-detail{font-size:11px;color:var(--g2);line-height:1.6}
+.pipe-arrow{text-align:center;font-size:18px;color:var(--g4);padding:4px 0;width:100%}
+.pipe-badge{display:inline-flex;font-family:var(--fm);font-size:9px;font-weight:700;padding:2px 7px;border-radius:100px;margin-top:6px}
+.pb-new{background:var(--bdim);border:1px solid var(--bmid);color:var(--blue)}
+.pb-keep{background:var(--grdim);border:1px solid var(--grmid);color:var(--green)}
+.pb-upg{background:var(--gdim);border:1px solid var(--gmid);color:var(--gold)}
+
+/* ── DOCKER COMPOSE VISUAL ── */
+.docker-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.docker-card{background:var(--s2);border:1px solid var(--b2);border-radius:12px;padding:18px 20px;position:relative;overflow:hidden}
+.docker-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px}
+.dc-redis::before{background:var(--red)}
+.dc-qdrant::before{background:var(--blue)}
+.dc-postgres::before{background:var(--teal)}
+.dc-fastapi::before{background:var(--green)}
+.dc-celery::before{background:var(--gold)}
+.dc-langfuse::before{background:var(--purple)}
+.dc-icon{font-size:22px;margin-bottom:10px}
+.dc-name{font-size:14px;font-weight:700;color:var(--w);font-family:var(--fb);margin-bottom:4px}
+.dc-image{font-family:var(--fm);font-size:10px;color:var(--g3);margin-bottom:8px}
+.dc-port{font-family:var(--fm);font-size:10px;padding:2px 7px;border-radius:4px;background:var(--s3);border:1px solid var(--b3);color:var(--g2);display:inline-block;margin-bottom:8px}
+.dc-roles{display:flex;flex-direction:column;gap:4px}
+.dc-role{font-size:11.5px;color:var(--g1);line-height:1.5;display:flex;align-items:flex-start;gap:6px}
+.dc-role::before{content:'→';color:var(--g3);font-family:var(--fm);font-size:10px;margin-top:2px;flex-shrink:0}
+.dc-dual{font-family:var(--fm);font-size:9px;font-weight:700;padding:2px 7px;border-radius:100px;background:var(--gdim);border:1px solid var(--gmid);color:var(--gold);display:inline-block;margin-bottom:6px}
+
+/* ── DECISION TABLE (CHANGED vs ORIGINAL) ── */
+.diff-table{width:100%;border-collapse:collapse;border-radius:12px;overflow:hidden}
+.diff-table th{background:var(--s3);padding:10px 16px;font-family:var(--fm);font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--g3);text-align:left;border-bottom:1px solid var(--b2)}
+.diff-table td{padding:12px 16px;border-bottom:1px solid var(--b1);font-size:12.5px;vertical-align:top;line-height:1.65}
+.diff-table tr:last-child td{border-bottom:none}
+.diff-table tr:hover td{background:var(--s2)}
+.dt-component{font-weight:600;color:var(--w);font-family:var(--fb)}
+.dt-old{color:var(--red)}
+.dt-new{color:var(--green)}
+.dt-reason{color:var(--g2)}
+.strike{text-decoration:line-through;color:var(--g3)}
+code{font-family:var(--fm);font-size:11px;background:var(--s3);padding:2px 6px;border-radius:4px;color:var(--teal)}
+
+/* ── CALLOUTS ── */
+.callout{padding:14px 18px;border-radius:8px;font-size:12.5px;line-height:1.7;margin-top:16px;border:1px solid}
+.c-info{background:var(--bdim);border-color:var(--bmid);color:var(--g1)}
+.c-info strong{color:var(--blue)}
+.c-warn{background:var(--gdim);border-color:var(--gmid);color:var(--g1)}
+.c-warn strong{color:var(--gold)}
+.c-success{background:var(--grdim);border-color:var(--grmid);color:var(--g1)}
+.c-success strong{color:var(--green)}
+.c-danger{background:var(--rdim);border-color:var(--rmid);color:var(--g1)}
+.c-danger strong{color:var(--red)}
+
+/* ── FOOTER ── */
+.footer{padding:24px 52px;background:var(--s1);border-top:1px solid var(--b1);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}
+.footer span{font-family:var(--fm);font-size:10px;color:var(--g4)}
+
+@media(max-width:920px){
+  nav{display:none}main{margin-left:0}
+  .statsbar{grid-template-columns:repeat(3,1fr)}
+  .docker-grid{grid-template-columns:1fr 1fr}
+  .adr-body{grid-template-columns:1fr}
+  .stack-hdr,.stack-row{grid-template-columns:120px 1fr 100px}
+  .stack-hdr span:last-child,.stack-row .sr-port{display:none}
+}
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="nb">
+    <div class="nb-tag">Artifact 01 of 03</div>
+    <div class="nb-title">Architecture Decision Record</div>
+    <div class="nb-sub">Personal Agentic RAG · Docker Edition · 2026</div>
+  </div>
+  <div class="ng">Contents</div>
+  <a class="na active" href="#context"><span class="nn">01</span>Project Context</a>
+  <a class="na" href="#finalstack"><span class="nn">02</span>Final Tech Stack</a>
+  <a class="na" href="#docker"><span class="nn">03</span>Docker Services</a>
+  <a class="na" href="#ingestion"><span class="nn">04</span>Ingestion Pipeline</a>
+  <a class="na" href="#query"><span class="nn">05</span>Query Pipeline</a>
+  <a class="na" href="#agentloop"><span class="nn">06</span>Agentic Loop</a>
+  <a class="na" href="#changes"><span class="nn">07</span>What Changed & Why</a>
+  <a class="na" href="#adrs"><span class="nn">08</span>Decision Records</a>
+  <div class="ng">Status</div>
+  <a class="na" href="#finalstack"><span class="na-pip"></span>6 Docker Services</a>
+  <a class="na" href="#changes"><span class="na-pip"></span>5 Decisions Changed</a>
+  <a class="na" href="#adrs"><span class="na-pip"></span>2 Removed (SQS/Kafka)</a>
+  <a class="na" href="#adrs"><span class="na-pip"></span>Redis → Dual Role</a>
+</nav>
+
+<!-- MAIN -->
+<main>
+
+<!-- HERO -->
+<div class="hero">
+  <div class="h-series">
+    <span class="h-series-label">Agentic RAG · Personal Project</span>
+    <span class="h-series-divider"></span>
+    <span class="h-series-id">ADR · v2.0</span>
+  </div>
+  <div class="h-title">Architecture<br><em>Decision Record</em></div>
+  <div class="h-sub">Every technology choice, finalized and justified. This document captures what we're building, what we decided to use, what we changed from the original evaluation, and the exact reason for each decision. Start here before writing a single line of code.</div>
+  <div class="chips">
+    <span class="chip c-g">Personal Project</span>
+    <span class="chip c-b">Docker Compose</span>
+    <span class="chip c-t">Redis Dual-Role</span>
+    <span class="chip c-p">LangGraph Agent</span>
+    <span class="chip c-gr">6 Services</span>
+    <span class="chip c-r">SQS/Kafka Dropped</span>
+  </div>
+</div>
+
+<!-- STATS BAR -->
+<div class="statsbar">
+  <div class="sb"><div class="sb-val sv-green">6</div><div class="sb-label">Docker Services</div></div>
+  <div class="sb"><div class="sb-val sv-blue">2</div><div class="sb-label">Redis Roles</div></div>
+  <div class="sb"><div class="sb-val sv-gold">8</div><div class="sb-label">LangGraph Nodes</div></div>
+  <div class="sb"><div class="sb-val sv-teal">3</div><div class="sb-label">LLM Models Used</div></div>
+  <div class="sb"><div class="sb-val sv-purple">0</div><div class="sb-label">Cloud Queues</div></div>
+  <div class="sb"><div class="sb-val sv-red">0</div><div class="sb-label">AWS Services</div></div>
+</div>
+
+<!-- ── 01 PROJECT CONTEXT ── -->
+<section id="context">
+  <div class="sec-eyebrow"><span class="sec-num">ADR-01</span><span class="sec-tag">Project Context</span></div>
+  <div class="sec-title">What We're <em>Building</em></div>
+  <div class="sec-lead">A full-complexity, personal Agentic RAG system. General-purpose (not domain-locked). Fully self-hosted via Docker. Portfolio-grade architecture — built to learn and showcase, not to cut corners.</div>
+
+  <div class="docker-grid" style="grid-template-columns:1fr 1fr;gap:16px">
+    <div style="background:var(--s2);border:1px solid var(--b2);border-radius:12px;padding:22px 24px;border-left:3px solid var(--green)">
+      <div style="font-family:var(--fm);font-size:9px;font-weight:700;letter-spacing:2px;color:var(--green);text-transform:uppercase;margin-bottom:10px">What this IS</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div style="font-size:12.5px;color:var(--g1);display:flex;gap:8px"><span style="color:var(--green)">✓</span>General-purpose document Q&A — works on any PDF domain</div>
+        <div style="font-size:12.5px;color:var(--g1);display:flex;gap:8px"><span style="color:var(--green)">✓</span>Full agentic loop with self-correction (CRAG pattern)</div>
+        <div style="font-size:12.5px;color:var(--g1);display:flex;gap:8px"><span style="color:var(--green)">✓</span>Hybrid retrieval: dense + sparse with RRF fusion</div>
+        <div style="font-size:12.5px;color:var(--g1);display:flex;gap:8px"><span style="color:var(--green)">✓</span>Fully self-hosted — no AWS, no managed cloud queues</div>
+        <div style="font-size:12.5px;color:var(--g1);display:flex;gap:8px"><span style="color:var(--green)">✓</span>Observability-first with Langfuse self-hosted</div>
+        <div style="font-size:12.5px;color:var(--g1);display:flex;gap:8px"><span style="color:var(--green)">✓</span>Multi-tenant ready (collection-per-tenant in Qdrant)</div>
+        <div style="font-size:12.5px;color:var(--g1);display:flex;gap:8px"><span style="color:var(--green)">✓</span>Portfolio-grade complexity — no shortcut taken on core arch</div>
+      </div>
+    </div>
+    <div style="background:var(--s2);border:1px solid var(--b2);border-radius:12px;padding:22px 24px;border-left:3px solid var(--red)">
+      <div style="font-family:var(--fm);font-size:9px;font-weight:700;letter-spacing:2px;color:var(--red);text-transform:uppercase;margin-bottom:10px">What we DROPPED (and why)</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div style="font-size:12.5px;color:var(--g1);display:flex;gap:8px"><span style="color:var(--red)">✗</span>AWS SQS — replaced by Redis Streams (already in stack)</div>
+        <div style="font-size:12.5px;color:var(--g1);display:flex;gap:8px"><span style="color:var(--red)">✗</span>AWS Lambda — replaced by Celery worker (Docker container)</div>
+        <div style="font-size:12.5px;color:var(--g1);display:flex;gap:8px"><span style="color:var(--red)">✗</span>Kafka + Zookeeper — overkill for one-user volume, adds complexity</div>
+        <div style="font-size:12.5px;color:var(--g1);display:flex;gap:8px"><span style="color:var(--red)">✗</span>Cohere Rerank API — replaced by local BGE model (free, faster)</div>
+        <div style="font-size:12.5px;color:var(--g1);display:flex;gap:8px"><span style="color:var(--red)">✗</span>Keyword-based query classifier — replaced by LLM classifier</div>
+        <div style="font-size:12.5px;color:var(--g1);display:flex;gap:8px"><span style="color:var(--red)">✗</span>LlamaIndex PDFReader (basic) — replaced by Docling</div>
+        <div style="font-size:12.5px;color:var(--g1);display:flex;gap:8px"><span style="color:var(--red)">✗</span>BFSI-only scope — now general-purpose</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── 02 FINAL TECH STACK ── -->
+<section id="finalstack">
+  <div class="sec-eyebrow"><span class="sec-num">ADR-02</span><span class="sec-tag">Technology Decisions</span></div>
+  <div class="sec-title">The <em>Final Stack</em></div>
+  <div class="sec-lead">Every technology choice, locked in. Color-coded by decision status: <span style="color:var(--green);font-weight:600">KEEP</span> = unchanged from original · <span style="color:var(--blue);font-weight:600">NEW</span> = added in our review · <span style="color:var(--gold);font-weight:600">CHANGED</span> = replaced something else.</div>
+
+  <div class="stack-grid">
+    <div class="stack-hdr">
+      <span>Layer</span><span>Technology & Decision</span><span>Status</span><span>Port / Config</span>
+    </div>
+
+    <!-- INFRASTRUCTURE -->
+    <div class="stack-group">
+      <div class="stack-group-label">Infrastructure & Deployment</div>
+      <div class="stack-row">
+        <div class="sr-layer">Containerisation</div>
+        <div><div class="sr-tech">Docker + Docker Compose</div><div class="sr-why">Single command to bring up the full stack. Every service runs in isolation. Reproducible across machines. No cloud account needed.</div></div>
+        <div><span class="sr-badge badge-keep">KEEP</span></div>
+        <div class="sr-port">docker-compose.yml</div>
+      </div>
+      <div class="stack-row">
+        <div class="sr-layer">API Framework</div>
+        <div><div class="sr-tech">FastAPI (Python)</div><div class="sr-why">Handles ingestion, query, and streaming endpoints. <strong>Logto auth</strong> via PyJWT against the Logto JWKS endpoint (<code>{LOGTO_ENDPOINT}/oidc/.well-known/jwks.json</code>); tenant extracted from the <code>organization_id</code> claim server-side. Async throughout. Also manages Celery task dispatch — replaces Lambda trigger.</div></div>
+        <div><span class="sr-badge badge-keep">KEEP</span></div>
+        <div class="sr-port">:8000</div>
+      </div>
+      <div class="stack-row">
+        <div class="sr-layer">Async Worker</div>
+        <div><div class="sr-tech">Celery + Redis Broker</div><div class="sr-why">Replaces AWS Lambda. Celery worker runs in its own Docker container, consumes tasks from Redis broker, processes PDF ingestion asynchronously. Zero AWS dependency.</div></div>
+        <div><span class="sr-badge badge-new">NEW</span></div>
+        <div class="sr-port">worker container</div>
+      </div>
+      <div class="stack-row">
+        <div class="sr-layer">Async Queue</div>
+        <div><div class="sr-tech">Redis Streams (via existing Redis)</div><div class="sr-why">Replaces both SQS and Kafka. Redis is already in the stack for semantic cache. Streams give persistent, consumer-group-aware queuing. No extra container needed.</div></div>
+        <div><span class="sr-badge badge-changed">CHANGED</span></div>
+        <div class="sr-port">Redis DB 0</div>
+      </div>
+    </div>
+
+    <!-- STORAGE -->
+    <div class="stack-group">
+      <div class="stack-group-label">Storage</div>
+      <div class="stack-row">
+        <div class="sr-layer">Vector Store</div>
+        <div><div class="sr-tech">Qdrant</div><div class="sr-why">Collection-per-tenant isolation. Named vector spaces for dense + sparse in one collection. Hybrid search with RRF fusion natively supported. Payload filtering on tenant_id, is_active.</div></div>
+        <div><span class="sr-badge badge-keep">KEEP</span></div>
+        <div class="sr-port">:6333</div>
+      </div>
+      <div class="stack-row">
+        <div class="sr-layer">Relational DB</div>
+        <div><div class="sr-tech">PostgreSQL</div><div class="sr-why">Stores parent chunks (1024-token), document metadata, dedup records (SHA256 hash), document version tracking with is_active flag. Row-level tenant isolation.</div></div>
+        <div><span class="sr-badge badge-keep">KEEP</span></div>
+        <div class="sr-port">:5432</div>
+      </div>
+      <div class="stack-row">
+        <div class="sr-layer">Cache + Queue</div>
+        <div><div class="sr-tech">Redis (Dual-Role)</div><div class="sr-why"><strong>DB 0:</strong> Celery broker + Redis Streams ingestion queue. <strong>DB 1:</strong> Celery result backend. <strong>DB 2:</strong> Semantic cache for query embeddings (threshold 0.88). One container, three jobs.</div></div>
+        <div><span class="sr-badge badge-changed">CHANGED</span></div>
+        <div class="sr-port">:6379</div>
+      </div>
+      <div class="stack-row">
+        <div class="sr-layer">Raw Files</div>
+        <div><div class="sr-tech">Local Volume (Docker mount)</div><div class="sr-why">Replaces S3 for personal project. Docker volume mount stores raw PDFs. If you later want S3 compatibility, swap to MinIO (S3-compatible, runs in Docker). Same code path.</div></div>
+        <div><span class="sr-badge badge-changed">CHANGED</span></div>
+        <div class="sr-port">/data/uploads</div>
+      </div>
+    </div>
+
+    <!-- INGESTION -->
+    <div class="stack-group">
+      <div class="stack-group-label">Ingestion Pipeline</div>
+      <div class="stack-row">
+        <div class="sr-layer">PDF Parsing</div>
+        <div><div class="sr-tech">Docling (IBM, open-source)</div><div class="sr-why">Replaces LlamaIndex PDFReader. Layout-aware extraction — handles tables as markdown, multi-column text, headers/footers, scanned pages via OCR. Has native LlamaIndex integration. This is why tables in your PDFs will actually work.</div></div>
+        <div><span class="sr-badge badge-new">NEW</span></div>
+        <div class="sr-port">pip install docling</div>
+      </div>
+      <div class="stack-row">
+        <div class="sr-layer">Chunking</div>
+        <div><div class="sr-tech">LlamaIndex HierarchicalNodeParser</div><div class="sr-why">Parent: 1024 tokens → stored in PostgreSQL. Child: 256 tokens → stored in Qdrant. Parent fetch after retrieval gives LLM coherent context. Fixed-size kept for Phase 1; semantic chunking is Tier 2 upgrade.</div></div>
+        <div><span class="sr-badge badge-keep">KEEP</span></div>
+        <div class="sr-port">1024 / 256 tokens</div>
+      </div>
+      <div class="stack-row">
+        <div class="sr-layer">Dense Embedding</div>
+        <div><div class="sr-tech"><code>openai/text-embedding-3-small</code> via OpenRouter</div><div class="sr-why">1536-dim. Routed through OpenRouter alongside chat traffic so we manage one API key. Cost ~5× lower than 3-large; hybrid search (dense + BM25 + parent fetch + LLM rerank in agent) more than compensates for the recall delta on this workload.</div></div>
+        <div><span class="sr-badge badge-changed">CHANGED</span></div>
+        <div class="sr-port">1536-dim · batch 100</div>
+      </div>
+      <div class="stack-row">
+        <div class="sr-layer">Sparse Embedding</div>
+        <div><div class="sr-tech">FastEmbed BM25</div><div class="sr-why">Runs locally, free, no API call. Handles exact-match retrieval on domain keywords. Critical for precision queries on specific terms.</div></div>
+        <div><span class="sr-badge badge-keep">KEEP</span></div>
+        <div class="sr-port">local · free</div>
+      </div>
+      <div class="stack-row">
+        <div class="sr-layer">Deduplication</div>
+        <div><div class="sr-tech">SHA256 content hash → PostgreSQL</div><div class="sr-why">Prevents same document being ingested twice. Hash checked before processing. If hash exists, skip entire pipeline. Also stores document version with is_active flag for versioning.</div></div>
+        <div><span class="sr-badge badge-keep">KEEP</span></div>
+        <div class="sr-port">docs table</div>
+      </div>
+    </div>
+
+    <!-- RETRIEVAL -->
+    <div class="stack-group">
+      <div class="stack-group-label">Retrieval Pipeline</div>
+      <div class="stack-row">
+        <div class="sr-layer">Hybrid Search</div>
+        <div><div class="sr-tech">Qdrant Prefetch + RRF Fusion</div><div class="sr-why">Two queries run in parallel: dense (OpenRouter embed via <code>openai/text-embedding-3-small</code>) + sparse (BM25, local). Qdrant fuses results with Reciprocal Rank Fusion. Filter: tenant_id + is_active=true. Returns top-30 candidates.</div></div>
+        <div><span class="sr-badge badge-keep">KEEP</span></div>
+        <div class="sr-port">top-30 · RRF</div>
+      </div>
+      <div class="stack-row">
+        <div class="sr-layer">Reranker</div>
+        <div><div class="sr-tech">BGE-Reranker-v2-M3 (local)</div><div class="sr-why">Replaces Cohere rerank API. Runs locally in the Celery/worker container or a dedicated inference service. ~15-25ms vs Cohere's 210ms. No API cost. English + multilingual support. Quality within 2% of Cohere on benchmarks.</div></div>
+        <div><span class="sr-badge badge-changed">CHANGED</span></div>
+        <div class="sr-port">local · top-30→8</div>
+      </div>
+      <div class="stack-row">
+        <div class="sr-layer">Semantic Cache</div>
+        <div><div class="sr-tech">Redis · cosine similarity 0.88</div><div class="sr-why">Lowered threshold from 0.95 → 0.88. More cache hits on paraphrased queries without introducing incorrect retrievals. Tuned based on evaluation recommendation. DB 2 in Redis.</div></div>
+        <div><span class="sr-badge badge-changed">CHANGED</span></div>
+        <div class="sr-port">Redis DB 2 · 0.88</div>
+      </div>
+    </div>
+
+    <!-- AGENT -->
+    <div class="stack-group">
+      <div class="stack-group-label">Agentic Loop</div>
+      <div class="stack-row">
+        <div class="sr-layer">Orchestration</div>
+        <div><div class="sr-tech">LangGraph (typed AgentState)</div><div class="sr-why">State machine with Pydantic-typed state. Nodes communicate through AgentState. Conditional edges for routing. Max iteration counter prevents infinite loops. Clean, debuggable, observable.</div></div>
+        <div><span class="sr-badge badge-keep">KEEP</span></div>
+        <div class="sr-port">AgentState model</div>
+      </div>
+      <div class="stack-row">
+        <div class="sr-layer">Query Classifier</div>
+        <div><div class="sr-tech"><code>google/gemini-2.5-flash</code> via OpenRouter (JSON mode)</div><div class="sr-why">Replaces keyword list ["compare", "difference", " and "]. LLM classifier at temperature 0 with structured JSON output. Few-shot examples. Routes: simple_factual → retrieve, multi_part → decompose, procedural → retrieve. No more false positives on " and ".</div></div>
+        <div><span class="sr-badge badge-changed">CHANGED</span></div>
+        <div class="sr-port">temp=0 · JSON mode</div>
+      </div>
+      <div class="stack-row">
+        <div class="sr-layer">Decomposition</div>
+        <div><div class="sr-tech"><code>google/gemini-2.5-flash</code> via OpenRouter</div><div class="sr-why">Breaks complex queries into 2-4 independent sub-questions. Cheap model — correct choice for orchestration tasks. Results in 3 parallel async Qdrant searches.</div></div>
+        <div><span class="sr-badge badge-keep">KEEP</span></div>
+        <div class="sr-port">$0.0001 / call</div>
+      </div>
+      <div class="stack-row">
+        <div class="sr-layer">Context Assessment</div>
+        <div><div class="sr-tech"><code>google/gemini-2.5-flash</code> via OpenRouter · threshold 7/10</div><div class="sr-why">Scores retrieved context 0-10. Routes to generate (≥7), reformulate (&lt;7, iter&lt;3), or web fallback (&lt;7, iter≥3). Known variance issue — temperature 0 forced, score distribution logged to Langfuse.</div></div>
+        <div><span class="sr-badge badge-keep">KEEP</span></div>
+        <div class="sr-port">temp=0 · logged</div>
+      </div>
+      <div class="stack-row">
+        <div class="sr-layer">Generation</div>
+        <div><div class="sr-tech"><code>openai/gpt-4o</code> via OpenRouter</div><div class="sr-why">Final answer generation only. Strict anti-hallucination system prompt. Every claim must cite [Source: doc, Page X]. Most expensive model used only where quality matters most.</div></div>
+        <div><span class="sr-badge badge-keep">KEEP</span></div>
+        <div class="sr-port">SSE stream</div>
+      </div>
+      <div class="stack-row">
+        <div class="sr-layer">Faithfulness Check</div>
+        <div><div class="sr-tech"><code>google/gemini-2.5-flash</code> via OpenRouter (post-generation)</div><div class="sr-why">NEW: After generation, Gemini Flash verifies every numerical/factual claim against source chunks. If faithfulness &lt; 0.85, regenerate with stricter prompt. Adds ~80ms. Catches hallucinations that pass the system prompt filter.</div></div>
+        <div><span class="sr-badge badge-new">NEW</span></div>
+        <div class="sr-port">+~80ms · async</div>
+      </div>
+    </div>
+
+    <!-- OBSERVABILITY -->
+    <div class="stack-group">
+      <div class="stack-group-label">Observability & Evaluation</div>
+      <div class="stack-row">
+        <div class="sr-layer">Tracing</div>
+        <div><div class="sr-tech">Langfuse (self-hosted Docker)</div><div class="sr-why">Every LangGraph node decorated with @observe(). Logs: query, retrieved chunks + scores, rerank scores, context score, final answer, citations, faithfulness score. Full trace per request. Self-hosted = free, no data leaves your machine.</div></div>
+        <div><span class="sr-badge badge-new">NEW</span></div>
+        <div class="sr-port">:3000</div>
+      </div>
+      <div class="stack-row">
+        <div class="sr-layer">Eval Framework</div>
+        <div><div class="sr-tech">RAGAS v2 (async, post-generation)</div><div class="sr-why">Faithfulness, answer relevancy, context precision, context recall scored on every query. Results pushed to Langfuse. Build a 50-100 question eval set from your own documents. Run weekly or on every new document ingested.</div></div>
+        <div><span class="sr-badge badge-new">NEW</span></div>
+        <div class="sr-port">pip install ragas</div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="callout c-info">
+    <strong>Total external API costs (per complex query, all routed via OpenRouter):</strong> embedding (3-small, ~$0.00002) + Gemini Flash × 3 (~$0.0003) + GPT-4o generation (~$0.005) ≈ <strong>~$0.005 per query</strong>. Reranker and semantic cache run free and locally. Langfuse self-hosted is free.
+  </div>
+</section>
+
+<!-- ── 03 DOCKER SERVICES ── -->
+<section id="docker">
+  <div class="sec-eyebrow"><span class="sec-num">ADR-03</span><span class="sec-tag">Infrastructure</span></div>
+  <div class="sec-title">6 Docker <em>Services</em></div>
+  <div class="sec-lead">One <code>docker-compose up</code> brings the entire stack live. Each service has a single clear responsibility. Redis does double (actually triple) duty — that's the key architectural simplification.</div>
+
+  <div class="docker-grid">
+    <div class="docker-card dc-fastapi">
+      <div class="dc-icon">⚡</div>
+      <div class="dc-name">FastAPI</div>
+      <div class="dc-image">python:3.11-slim · custom image</div>
+      <div class="dc-port">:8000</div>
+      <div class="dc-roles">
+        <div class="dc-role">POST /ingest — receives PDFs, validates, dedup check, dispatches Celery task</div>
+        <div class="dc-role">POST /chat/stream — runs LangGraph pipeline, returns SSE stream</div>
+        <div class="dc-role">GET /health, GET /docs — standard</div>
+        <div class="dc-role">Logto middleware — verifies access token (JWKS), extracts tenant_id from organization_id claim</div>
+      </div>
+    </div>
+
+    <div class="docker-card dc-celery">
+      <div class="dc-icon">⚙️</div>
+      <div class="dc-name">Celery Worker</div>
+      <div class="dc-image">same image as FastAPI</div>
+      <div class="dc-port">internal only</div>
+      <div class="dc-roles">
+        <div class="dc-role">Consumes ingestion tasks from Redis broker</div>
+        <div class="dc-role">Runs Docling PDF parsing</div>
+        <div class="dc-role">Chunking → embedding → Qdrant upsert</div>
+        <div class="dc-role">Writes parent chunks to PostgreSQL</div>
+        <div class="dc-role">Post-ingest validation (chunk count check)</div>
+      </div>
+    </div>
+
+    <div class="docker-card dc-redis">
+      <div class="dc-icon">🔴</div>
+      <div class="dc-name">Redis</div>
+      <div class="dc-image">redis:7-alpine</div>
+      <div class="dc-port">:6379</div>
+      <div class="dc-dual">DUAL ROLE</div>
+      <div class="dc-roles">
+        <div class="dc-role"><strong>DB 0:</strong> Celery broker + ingestion task queue (Redis Streams)</div>
+        <div class="dc-role"><strong>DB 1:</strong> Celery result backend</div>
+        <div class="dc-role"><strong>DB 2:</strong> Semantic cache (query embeddings, threshold 0.88, TTL 24h)</div>
+      </div>
+    </div>
+
+    <div class="docker-card dc-qdrant">
+      <div class="dc-icon">🔷</div>
+      <div class="dc-name">Qdrant</div>
+      <div class="dc-image">qdrant/qdrant:latest</div>
+      <div class="dc-port">:6333 · :6334 (gRPC)</div>
+      <div class="dc-roles">
+        <div class="dc-role">Stores 256-token child chunks as named vectors {dense, bm25}</div>
+        <div class="dc-role">Collection-per-tenant isolation</div>
+        <div class="dc-role">Payload: tenant_id, parent_id, doc_type, is_active, page_num, chunk_index</div>
+        <div class="dc-role">Hybrid search with RRF fusion at query time</div>
+      </div>
+    </div>
+
+    <div class="docker-card dc-postgres">
+      <div class="dc-icon">🐘</div>
+      <div class="dc-name">PostgreSQL</div>
+      <div class="dc-image">postgres:16-alpine</div>
+      <div class="dc-port">:5432</div>
+      <div class="dc-roles">
+        <div class="dc-role">documents table — SHA256 hash, doc metadata, version, is_active</div>
+        <div class="dc-role">parent_chunks table — 1024-token context, tenant_id, parent_id</div>
+        <div class="dc-role">tenants table — Logto org_id mapping, qdrant_collection name, per-tenant settings</div>
+        <div class="dc-role">eval_logs table — RAGAS scores, query traces</div>
+      </div>
+    </div>
+
+    <div class="docker-card dc-langfuse">
+      <div class="dc-icon">🔭</div>
+      <div class="dc-name">Langfuse</div>
+      <div class="dc-image">langfuse/langfuse:latest</div>
+      <div class="dc-port">:3000</div>
+      <div class="dc-roles">
+        <div class="dc-role">Receives traces from every LangGraph node via @observe()</div>
+        <div class="dc-role">Stores: query, chunks, scores, answer, citations, faithfulness</div>
+        <div class="dc-role">RAGAS scores pushed here after each eval run</div>
+        <div class="dc-role">Self-hosted — free, data stays local</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout c-warn" style="margin-top:20px">
+    <strong>Note on BGE Reranker:</strong> The local BGE-Reranker-v2-M3 model (~568MB) runs inside the Celery worker container — it loads on startup and serves reranking in-process. No separate inference service needed for personal use. If you want to serve it separately later, wrap it in a FastAPI endpoint and add a 7th service.
+  </div>
+</section>
+
+<!-- ── 04 INGESTION PIPELINE ── -->
+<section id="ingestion">
+  <div class="sec-eyebrow"><span class="sec-num">ADR-04</span><span class="sec-tag">Data Flow</span></div>
+  <div class="sec-title">Ingestion <em>Pipeline</em></div>
+  <div class="sec-lead">Every step from PDF upload to Qdrant upsert. The async split (FastAPI → Celery) is where SQS/Lambda used to live. Everything else is identical to the original architecture.</div>
+
+  <div class="pipe-group">
+    <div class="pipe-group-title">Stage 1 — API Entry (FastAPI, synchronous, &lt;50ms)</div>
+    <div class="pipe-nodes">
+      <div class="pipe-node highlight-green">
+        <div class="pn-label">Entry</div>
+        <div class="pn-tech">POST /ingest</div>
+        <div class="pn-detail">Receives PDF file + tenant_id (from Logto access-token claims). Validates file type and size.</div>
+        <span class="pipe-badge pb-keep">unchanged</span>
+      </div>
+      <div class="pipe-node highlight-blue">
+        <div class="pn-label">Auth</div>
+        <div class="pn-tech">Logto · @require_auth</div>
+        <div class="pn-detail">PyJWT verifies the access token against Logto's JWKS (cached). tenant_id extracted from <code>organization_id</code> claim server-side. Never trust client-supplied tenant context.</div>
+        <span class="pipe-badge pb-upg">was JWT</span>
+      </div>
+      <div class="pipe-node highlight-green">
+        <div class="pn-label">Dedup</div>
+        <div class="pn-tech">SHA256 Hash Check</div>
+        <div class="pn-detail">Hash PDF content. Check PostgreSQL documents table. If exists and is_active=true → skip. If exists and is_active=false → re-ingest.</div>
+        <span class="pipe-badge pb-keep">unchanged</span>
+      </div>
+      <div class="pipe-node highlight">
+        <div class="pn-label">Queue Dispatch</div>
+        <div class="pn-tech">Celery Task → Redis</div>
+        <div class="pn-detail">Previously: SQS.send_message(). Now: celery_app.send_task('ingest_pdf', args=[file_path, tenant_id]). Same async contract, no AWS.</div>
+        <span class="pipe-badge pb-upg">was SQS</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="pipe-group">
+    <div class="pipe-group-title">Stage 2 — Async Processing (Celery Worker Container)</div>
+    <div class="pipe-nodes">
+      <div class="pipe-node highlight">
+        <div class="pn-label">PDF Parsing</div>
+        <div class="pn-tech">Docling</div>
+        <div class="pn-detail">Layout-aware extraction. Tables → markdown. Scanned pages → OCR. Multi-column → linearised correctly. Was: LlamaIndex PDFReader (no table support).</div>
+        <span class="pipe-badge pb-upg">was PDFReader</span>
+      </div>
+      <div class="pipe-node highlight-green">
+        <div class="pn-label">Chunking</div>
+        <div class="pn-tech">HierarchicalNodeParser</div>
+        <div class="pn-detail">Parent: 1024 tokens → PostgreSQL. Child: 256 tokens → Qdrant. parent_id links them.</div>
+        <span class="pipe-badge pb-keep">unchanged</span>
+      </div>
+      <div class="pipe-node highlight">
+        <div class="pn-label">Dense Embed</div>
+        <div class="pn-tech">openai/text-embedding-3-small (via OpenRouter)</div>
+        <div class="pn-detail">1536-dim. Batched in 100s. Routed via OpenRouter on a single API key shared with chat traffic. Cost: ~$0.00002/1K tokens.</div>
+        <span class="pipe-badge pb-upg">was 3-small</span>
+      </div>
+      <div class="pipe-node highlight-green">
+        <div class="pn-label">Sparse Embed</div>
+        <div class="pn-tech">FastEmbed BM25</div>
+        <div class="pn-detail">Runs locally. Free. No API. Exact-match for precise terminology queries.</div>
+        <span class="pipe-badge pb-keep">unchanged</span>
+      </div>
+      <div class="pipe-node highlight-green">
+        <div class="pn-label">Upsert</div>
+        <div class="pn-tech">Qdrant PointStruct</div>
+        <div class="pn-detail">Named vectors {dense, bm25}. Payload includes tenant_id, parent_id, doc_version, is_active=true. Post-upsert count validation.</div>
+        <span class="pipe-badge pb-keep">unchanged</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout c-success">
+    <strong>Document Versioning (new):</strong> When a new version of an existing document is ingested, the worker sets <code>is_active=false</code> on all Qdrant payload points from the previous version (using Qdrant's <code>set_payload</code> API with a filter), then ingests the new version with <code>is_active=true</code>. All retrieval queries include <code>must: [is_active == true]</code> filter. Old versions are kept but never returned.
+  </div>
+</section>
+
+<!-- ── 05 QUERY PIPELINE ── -->
+<section id="query">
+  <div class="sec-eyebrow"><span class="sec-num">ADR-05</span><span class="sec-tag">Data Flow</span></div>
+  <div class="sec-title">Query <em>Pipeline</em></div>
+  <div class="sec-lead">From user question to streamed answer. Simple path: ~1.6s (after reranker upgrade). Complex path: ~3.8s. Both paths go through LangGraph state machine.</div>
+
+  <div class="pipe-group">
+    <div class="pipe-group-title">Pre-Agent (FastAPI, &lt;100ms)</div>
+    <div class="pipe-nodes">
+      <div class="pipe-node highlight-blue">
+        <div class="pn-label">Auth</div>
+        <div class="pn-tech">Logto Verify · cached JWKS</div>
+        <div class="pn-detail">PyJWT verifies the access token against Logto's cached JWKS. tenant_id extracted from <code>organization_id</code> claim server-side. Sets collection name for Qdrant queries.</div>
+        <span class="pipe-badge pb-upg">was JWT</span>
+      </div>
+      <div class="pipe-node highlight">
+        <div class="pn-label">Semantic Cache</div>
+        <div class="pn-tech">Redis · threshold 0.88</div>
+        <div class="pn-detail">Embed query → cosine similarity vs cached embeddings in Redis DB 2. Hit → return instantly. Miss → enter LangGraph. Threshold lowered from 0.95 for more hits.</div>
+        <span class="pipe-badge pb-upg">threshold ↓0.88</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="pipe-group">
+    <div class="pipe-group-title">LangGraph Agent Nodes (ordered, conditional routing)</div>
+    <div class="pipe-nodes">
+      <div class="pipe-node highlight-blue">
+        <div class="pn-label">Node 1</div>
+        <div class="pn-tech">classify_query</div>
+        <div class="pn-detail">Gemini Flash via OpenRouter, temp=0, JSON output. Routes: simple_factual → retrieve | multi_part → decompose | procedural → retrieve. Was keyword list.</div>
+        <span class="pipe-badge pb-upg">was keywords</span>
+      </div>
+      <div class="pipe-node highlight-blue">
+        <div class="pn-label">Node 2 (complex only)</div>
+        <div class="pn-tech">decompose_question</div>
+        <div class="pn-detail">Gemini Flash via OpenRouter. Splits into 2-4 sub-questions. Each gets its own parallel Qdrant search.</div>
+        <span class="pipe-badge pb-keep">unchanged</span>
+      </div>
+      <div class="pipe-node highlight-blue">
+        <div class="pn-label">Node 3</div>
+        <div class="pn-tech">retrieve</div>
+        <div class="pn-detail">Qdrant hybrid search. Prefetch dense + sparse → RRF fusion. Filter: tenant_id + is_active=true. Returns top-30.</div>
+        <span class="pipe-badge pb-keep">+ is_active filter</span>
+      </div>
+      <div class="pipe-node highlight">
+        <div class="pn-label">Node 4</div>
+        <div class="pn-tech">rerank · BGE local</div>
+        <div class="pn-detail">BGE-Reranker-v2-M3 in-process. top-30 → top-8. ~15-25ms. Was Cohere API at 210ms.</div>
+        <span class="pipe-badge pb-upg">was Cohere</span>
+      </div>
+      <div class="pipe-node highlight-blue">
+        <div class="pn-label">Node 5</div>
+        <div class="pn-tech">parent_fetch</div>
+        <div class="pn-detail">Deduplicated parent_ids → PostgreSQL lookup. Returns 1024-token parent chunks for LLM context.</div>
+        <span class="pipe-badge pb-keep">unchanged</span>
+      </div>
+      <div class="pipe-node highlight-blue">
+        <div class="pn-label">Node 6</div>
+        <div class="pn-tech">assess_context</div>
+        <div class="pn-detail">Gemini Flash via OpenRouter, temp=0. Score 0-10. ≥7 → generate. &lt;7 + iter&lt;3 → reformulate. &lt;7 + iter≥3 → fallback. Score logged to Langfuse.</div>
+        <span class="pipe-badge pb-keep">+ temp=0 + logging</span>
+      </div>
+      <div class="pipe-node highlight-blue">
+        <div class="pn-label">Node 7</div>
+        <div class="pn-tech">generate_answer · openai/gpt-4o (via OpenRouter)</div>
+        <div class="pn-detail">Strict anti-hallucination prompt. Every claim cited [Source: doc, Page X]. SSE stream to client.</div>
+        <span class="pipe-badge pb-keep">unchanged</span>
+      </div>
+      <div class="pipe-node highlight">
+        <div class="pn-label">Node 8 (NEW)</div>
+        <div class="pn-tech">faithfulness_check</div>
+        <div class="pn-detail">Gemini Flash via OpenRouter verifies answer claims against source chunks. Score &lt;0.85 → regenerate with stricter prompt. +~80ms. Logged to Langfuse.</div>
+        <span class="pipe-badge pb-upg">new node</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── 06 AGENTIC LOOP ── -->
+<section id="agentloop">
+  <div class="sec-eyebrow"><span class="sec-num">ADR-06</span><span class="sec-tag">Agent Design</span></div>
+  <div class="sec-title">AgentState <em>Schema</em></div>
+  <div class="sec-lead">The Pydantic model that flows through every LangGraph node. Every field has a purpose. This is the single source of truth for what the agent knows at any point in the pipeline.</div>
+
+  <div style="background:var(--s2);border:1px solid var(--b2);border-radius:12px;overflow:hidden">
+    <div style="padding:14px 20px;background:var(--s3);border-bottom:1px solid var(--b2);font-family:var(--fm);font-size:9px;font-weight:700;letter-spacing:2px;color:var(--g3);text-transform:uppercase">AgentState — Pydantic Model (LangGraph TypedDict)</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0">
+      <div style="padding:20px 22px;border-right:1px solid var(--b2)">
+        <div style="font-family:var(--fm);font-size:9px;font-weight:700;letter-spacing:2px;color:var(--blue);text-transform:uppercase;margin-bottom:12px">Core Query Fields</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:12px;line-height:1.6"><code>query: str</code> <span style="color:var(--g3)">— original user query</span></div>
+          <div style="font-size:12px;line-height:1.6"><code>tenant_id: str</code> <span style="color:var(--g3)">— from Logto <code>organization_id</code> claim, sets Qdrant collection</span></div>
+          <div style="font-size:12px;line-height:1.6"><code>collection: str</code> <span style="color:var(--g3)">— Qdrant collection name</span></div>
+          <div style="font-size:12px;line-height:1.6"><code>query_type: Literal[...]</code> <span style="color:var(--g3)">— simple_factual | multi_part | procedural</span></div>
+          <div style="font-size:12px;line-height:1.6"><code>sub_questions: list[str]</code> <span style="color:var(--g3)">— decomposed sub-queries (complex path)</span></div>
+          <div style="font-size:12px;line-height:1.6"><code>iteration: int</code> <span style="color:var(--g3)">— current retry count, max 3</span></div>
+        </div>
+      </div>
+      <div style="padding:20px 22px">
+        <div style="font-family:var(--fm);font-size:9px;font-weight:700;letter-spacing:2px;color:var(--teal);text-transform:uppercase;margin-bottom:12px">Retrieval & Generation Fields</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:12px;line-height:1.6"><code>retrieved_chunks: list[Chunk]</code> <span style="color:var(--g3)">— post-rerank top-8</span></div>
+          <div style="font-size:12px;line-height:1.6"><code>parent_chunks: list[ParentChunk]</code> <span style="color:var(--g3)">— 1024-token context</span></div>
+          <div style="font-size:12px;line-height:1.6"><code>context_score: float</code> <span style="color:var(--g3)">— Gemini Flash assessment 0-10</span></div>
+          <div style="font-size:12px;line-height:1.6"><code>context_reason: str</code> <span style="color:var(--g3)">— assessor explanation for reformulation</span></div>
+          <div style="font-size:12px;line-height:1.6"><code>final_answer: str</code> <span style="color:var(--g3)">— GPT-4o generated answer</span></div>
+          <div style="font-size:12px;line-height:1.6"><code>citations: list[Citation]</code> <span style="color:var(--g3)">— [Source: doc, Page X] structured</span></div>
+          <div style="font-size:12px;line-height:1.6"><code>faithfulness_score: float</code> <span style="color:var(--g3)">— NEW: post-generation verification</span></div>
+          <div style="font-size:12px;line-height:1.6"><code>messages: list[BaseMessage]</code> <span style="color:var(--g3)">— LangGraph message history</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout c-info" style="margin-top:16px">
+    <strong>Routing Logic (conditional edges):</strong> classify_query result → routes to retrieve OR decompose. assess_context score + iteration → routes to generate, reformulate_query, or fallback. Reformulate uses <code>context_reason</code> to rewrite the query intelligently before looping back to retrieve. Max iteration = 3 hard stop.
+  </div>
+</section>
+
+<!-- ── 07 WHAT CHANGED ── -->
+<section id="changes">
+  <div class="sec-eyebrow"><span class="sec-num">ADR-07</span><span class="sec-tag">Decision Delta</span></div>
+  <div class="sec-title">What <em>Changed</em> From Original</div>
+  <div class="sec-lead">The original evaluation proposed these upgrades. Here's every change we finalized in our conversation, what it replaced, and the exact reason it was made.</div>
+
+  <table class="diff-table">
+    <thead>
+      <tr>
+        <th>Component</th>
+        <th>Original</th>
+        <th>Final Decision</th>
+        <th>Reason</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><div class="dt-component">Async Queue</div></td>
+        <td><div class="dt-old">AWS SQS → (considered Kafka)</div></td>
+        <td><div class="dt-new">Redis Streams</div></td>
+        <td class="dt-reason">Redis already in stack for semantic cache. Kafka adds Zookeeper overhead for single-user volume. Redis Streams = persistent, consumer-group-aware, zero extra containers.</td>
+      </tr>
+      <tr>
+        <td><div class="dt-component">Compute Worker</div></td>
+        <td><div class="dt-old">AWS Lambda</div></td>
+        <td><div class="dt-new">Celery Worker (Docker)</div></td>
+        <td class="dt-reason">Personal project — no AWS. Celery with Redis broker is the standard self-hosted equivalent. Same async contract. Same code path. No cloud account needed.</td>
+      </tr>
+      <tr>
+        <td><div class="dt-component">PDF Parser</div></td>
+        <td><div class="dt-old">LlamaIndex PDFReader</div></td>
+        <td><div class="dt-new">Docling (IBM, open-source)</div></td>
+        <td class="dt-reason">PDFReader fails silently on tables, multi-column layouts, scanned pages. Docling handles all three natively. Has LlamaIndex integration. Tables stored as markdown — embed correctly.</td>
+      </tr>
+      <tr>
+        <td><div class="dt-component">Dense Embeddings</div></td>
+        <td><div class="dt-old">Direct OpenAI API key</div></td>
+        <td><div class="dt-new"><code>openai/text-embedding-3-small</code> via OpenRouter (1536-dim)</div></td>
+        <td class="dt-reason">All LLM + embedding traffic goes through OpenRouter on a single key, simplifying ops. 3-small chosen over 3-large because hybrid retrieval (dense + BM25 + parent fetch) compensates for the recall delta on this workload, and 3-small is ~5× cheaper. Easy to flip via <code>EMBEDDING_MODEL</code> env if eval scores demand it.</td>
+      </tr>
+      <tr>
+        <td><div class="dt-component">Reranker</div></td>
+        <td><div class="dt-old">Cohere rerank-english-v3.0 API (~210ms)</div></td>
+        <td><div class="dt-new">BGE-Reranker-v2-M3 local (~20ms)</div></td>
+        <td class="dt-reason">-190ms per query. No API cost. No external dependency. Runs in-process in Celery worker. Quality within 2% of Cohere. Zero reason to pay for a remote API for this.</td>
+      </tr>
+      <tr>
+        <td><div class="dt-component">Query Classifier</div></td>
+        <td><div class="dt-old">Keyword list ["compare", " and ", " vs "]</div></td>
+        <td><div class="dt-new">Gemini Flash via OpenRouter, temp=0, JSON mode</div></td>
+        <td class="dt-reason">Keywords cause ~15-25% misclassification. " and " fires on half of all English queries. LLM classifier at temp=0 with few-shot examples is deterministic and accurate. Cost: ~$0.00005/classification.</td>
+      </tr>
+      <tr>
+        <td><div class="dt-component">Cache Threshold</div></td>
+        <td><div class="dt-old">Cosine similarity 0.95</div></td>
+        <td><div class="dt-new">Cosine similarity 0.88</div></td>
+        <td class="dt-reason">0.95 only catches near-identical queries. 0.88 catches paraphrases (same question, different words). Estimated cache hit rate: 5% → 25-35%. Verify no incorrect hits on your eval set.</td>
+      </tr>
+      <tr>
+        <td><div class="dt-component">Post-Generation</div></td>
+        <td><div class="dt-old">Nothing (trust generation prompt)</div></td>
+        <td><div class="dt-new">Gemini Flash via OpenRouter — faithfulness check</div></td>
+        <td class="dt-reason">GPT-4o can hallucinate within the instruction envelope. Faithfulness check verifies claims against source chunks. +~80ms. Catches the most dangerous category of errors (wrong numbers).</td>
+      </tr>
+      <tr>
+        <td><div class="dt-component">Document Versioning</div></td>
+        <td><div class="dt-old">None (old + new chunks mix in Qdrant)</div></td>
+        <td><div class="dt-new">is_active flag on Qdrant payload</div></td>
+        <td class="dt-reason">Without versioning, every document update corrupts the knowledge base silently. is_active=false soft-deletes old version chunks. All retrieval queries filter is_active=true. 3-day implementation.</td>
+      </tr>
+      <tr>
+        <td><div class="dt-component">Observability</div></td>
+        <td><div class="dt-old">Langfuse "mentioned"</div></td>
+        <td><div class="dt-new">Langfuse self-hosted + RAGAS</div></td>
+        <td class="dt-reason">Mentioned ≠ implemented. @observe() on every node. RAGAS scores on every query. Self-hosted Docker image — free, data stays local. The single highest-ROI addition to the entire system.</td>
+      </tr>
+      <tr>
+        <td><div class="dt-component">Raw File Storage</div></td>
+        <td><div class="dt-old">AWS S3</div></td>
+        <td><div class="dt-new">Docker volume mount (/data/uploads)</div></td>
+        <td class="dt-reason">Personal project. No S3 needed. Docker volume is sufficient. If S3 compatibility wanted later: drop in MinIO (S3-API-compatible, runs in Docker, one-line code change).</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ── 08 ADRs ── -->
+<section id="adrs">
+  <div class="sec-eyebrow"><span class="sec-num">ADR-08</span><span class="sec-tag">Formal Decisions</span></div>
+  <div class="sec-title">Key <em>Decision Records</em></div>
+  <div class="sec-lead">The decisions that had real alternatives worth recording. Each ADR captures the context, the options considered, and the final call.</div>
+
+  <div class="adr-grid">
+
+    <div class="adr-card">
+      <div class="adr-top">
+        <div class="adr-head">
+          <div>
+            <div class="adr-id">ADR-001 · QUEUE TECHNOLOGY</div>
+            <div class="adr-title">Async ingestion queue: Redis Streams over Kafka</div>
+          </div>
+          <span class="adr-status status-accepted">Accepted</span>
+        </div>
+        <div class="adr-decision">Redis Streams is the async queue for PDF ingestion tasks, replacing SQS. Kafka was evaluated and rejected.</div>
+      </div>
+      <div class="adr-body">
+        <div class="adr-col">
+          <div class="adr-col-label">Context</div>
+          <div class="adr-col-body">Personal project, Docker-only, single user. Original used AWS SQS. Needed a self-hosted async queue. Both Kafka and Redis Streams were considered after SQS was dropped.</div>
+        </div>
+        <div class="adr-col">
+          <div class="adr-col-label">Options Considered</div>
+          <div class="adr-col-body"><strong>Kafka:</strong> powerful, distributed, correct for high-volume. Requires Zookeeper. Extra 2 containers. Overkill for 1-user ingestion volume.<br><br><strong>Redis Streams:</strong> Redis already in stack. Consumer groups. Persistence. 0 extra containers.</div>
+        </div>
+        <div class="adr-col">
+          <div class="adr-col-label">Decision & Consequence</div>
+          <div class="adr-col-body">Redis Streams wins. Celery uses Redis as broker — same Redis instance, <code>DB 0</code>. If volume ever needs Kafka: Celery broker swap is a one-line config change. No app code changes needed.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-top">
+        <div class="adr-head">
+          <div>
+            <div class="adr-id">ADR-002 · RERANKER</div>
+            <div class="adr-title">Local BGE reranker over Cohere API</div>
+          </div>
+          <span class="adr-status status-accepted">Accepted</span>
+        </div>
+        <div class="adr-decision">BGE-Reranker-v2-M3 runs in-process in the Celery worker. Cohere API dependency removed entirely.</div>
+      </div>
+      <div class="adr-body">
+        <div class="adr-col">
+          <div class="adr-col-label">Context</div>
+          <div class="adr-col-body">Cohere rerank was 210ms per query (11.7% of total latency), costs ~$0.0005/query, and adds an external API dependency. Local alternatives are now production-mature in 2026.</div>
+        </div>
+        <div class="adr-col">
+          <div class="adr-col-label">Options Considered</div>
+          <div class="adr-col-body"><strong>Keep Cohere:</strong> simplest, highest quality historically. But 210ms and paid API.<br><br><strong>BGE-v2-M3:</strong> ~568MB model, 15-25ms, free, multilingual, within 2% quality of Cohere on BEIR.<br><br><strong>Jina reranker-v2:</strong> Apache licensed, similar quality.</div>
+        </div>
+        <div class="adr-col">
+          <div class="adr-col-label">Decision & Consequence</div>
+          <div class="adr-col-body">BGE-v2-M3 chosen. Loads on worker startup (~3s cold start, then warm). Saves 190ms/query, eliminates API cost and dependency. If quality proves insufficient: Cohere is a one-line swap-back.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-top">
+        <div class="adr-head">
+          <div>
+            <div class="adr-id">ADR-003 · QUERY ROUTING</div>
+            <div class="adr-title">LLM classifier over keyword-based routing</div>
+          </div>
+          <span class="adr-status status-accepted">Accepted</span>
+        </div>
+        <div class="adr-decision">Gemini Flash at temperature 0 with structured JSON output replaces the keyword list for query classification.</div>
+      </div>
+      <div class="adr-body">
+        <div class="adr-col">
+          <div class="adr-col-label">Context</div>
+          <div class="adr-col-body">Original keyword list ["compare", "difference", " and ", "also", " vs "] caused systematic misclassification — " and " fires on ~50% of all English queries regardless of complexity.</div>
+        </div>
+        <div class="adr-col">
+          <div class="adr-col-label">Options Considered</div>
+          <div class="adr-col-body"><strong>Improve keywords:</strong> add more rules, longer patterns. Still brittle, doesn't scale.<br><br><strong>Fine-tune classifier:</strong> train a small text classifier on labeled queries. Better quality, requires labeled data.<br><br><strong>LLM (Gemini Flash):</strong> immediate, no data needed, ~$0.00005/call.</div>
+        </div>
+        <div class="adr-col">
+          <div class="adr-col-label">Decision & Consequence</div>
+          <div class="adr-col-body">LLM classifier chosen for speed of implementation and quality. Cache classifier results in Redis (query embedding key, 24h TTL) to avoid repeated LLM calls on identical queries. Adds ~80ms to cold-path only.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-top">
+        <div class="adr-head">
+          <div>
+            <div class="adr-id">ADR-004 · CHUNKING STRATEGY</div>
+            <div class="adr-title">Fixed-size chunking kept for Phase 1 (semantic chunking deferred)</div>
+          </div>
+          <span class="adr-status status-updated">Phase 1 Only</span>
+        </div>
+        <div class="adr-decision">HierarchicalNodeParser with 1024/256 fixed token sizes kept for Phase 1. Semantic chunking (SemanticSplitterNodeParser) scheduled for Phase 2 after eval data collected.</div>
+      </div>
+      <div class="adr-body">
+        <div class="adr-col">
+          <div class="adr-col-label">Context</div>
+          <div class="adr-col-body">Fixed-size chunking violates semantic boundaries — a sentence or table row can be split mid-content. Semantic chunking uses embeddings to find natural break points.</div>
+        </div>
+        <div class="adr-col">
+          <div class="adr-col-label">Why Deferred</div>
+          <div class="adr-col-body">Semantic chunking requires re-ingesting all documents when changed. Without an eval set, we can't measure whether it actually improves retrieval quality. Need baseline first.</div>
+        </div>
+        <div class="adr-col">
+          <div class="adr-col-label">Trigger to Upgrade</div>
+          <div class="adr-col-body">When RAGAS context_precision score is consistently below 0.75 on your eval set, switch to <code>SemanticSplitterNodeParser</code> and re-ingest. The pipeline supports hot-swap without other changes.</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="callout c-warn" style="margin-top:20px">
+    <strong>What we deliberately kept simple (scope decisions for personal project):</strong> No rate limiting per tenant (single user), no per-tenant SQS priority queues (single Celery queue is fine), no post-generation NLI verification (Gemini Flash faithfulness check is sufficient without regulatory stakes), no per-tenant Logto resource provisioning automation (manual via Logto Console for now). These aren't gaps — they're correct scope choices for a personal project that retains full portfolio-grade architecture.
+  </div>
+</section>
+
+<!-- FOOTER -->
+<div class="footer">
+  <span>Agentic RAG · Architecture Decision Record · v2.0 · Personal Project Edition</span>
+  <span>Artifact 01 of 03 · Next: Phase Architecture & Code Guide</span>
+</div>
+
+</main>
+
+<script>
+const sections = document.querySelectorAll('section[id]');
+const links = document.querySelectorAll('.na[href^="#"]');
+const obs = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if(e.isIntersecting){
+      links.forEach(l => l.classList.remove('active'));
+      const l = document.querySelector(`.na[href="#${e.target.id}"]`);
+      if(l) l.classList.add('active');
+    }
+  });
+}, {threshold:0.15, rootMargin:'-60px 0px -60% 0px'});
+sections.forEach(s => obs.observe(s));
+</script>
+</body>
+</html>

@@ -1,0 +1,79 @@
+name: agentic-rag
+
+services:
+
+  # ── PostgreSQL ─────────────────────────────────────────────
+  # Stores: documents (dedup, version), parent_chunks (1024-token),
+  # tenants (Logto org_id mapping), eval_logs (Phase 2).
+  postgres:
+    image: postgres:16-alpine
+    container_name: agentic-rag-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      # Host port is configurable to avoid clashing with a system PostgreSQL.
+      # Inside the Docker network, services still talk to `postgres:5432`.
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - ragnet
+
+  # ── Redis (triple-role) ────────────────────────────────────
+  # DB 0: Celery broker + ingestion task queue
+  # DB 1: Celery result backend
+  # DB 2: Semantic cache (query embeddings, threshold 0.88, TTL 24h)
+  redis:
+    image: redis:7-alpine
+    container_name: agentic-rag-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - ragnet
+
+  # ── Qdrant (vector store) ──────────────────────────────────
+  # Collection-per-tenant. Named vectors: dense (3072) + bm25 (sparse).
+  # Hybrid search via Prefetch + RRF Fusion. UI at :6333/dashboard.
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: agentic-rag-qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"   # HTTP / dashboard
+      - "6334:6334"   # gRPC
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/127.0.0.1/6333' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - ragnet
+
+volumes:
+  postgres_data:
+  redis_data:
+  qdrant_data:
+
+networks:
+  ragnet:
+    driver: bridge

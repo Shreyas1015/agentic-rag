@@ -1,0 +1,92 @@
+from functools import cached_property
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        extra="ignore",
+    )
+
+    # ── App ────────────────────────────────────────────────
+    APP_NAME: str = "agentic-rag"
+    APP_ENV: str = "dev"
+    DEBUG: bool = True
+
+    # ── LLM gateway (OpenRouter) ───────────────────────────
+    OPENROUTER_API_KEY: str = ""
+    OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
+    OPENROUTER_APP_REFERER: str = "http://localhost:8000"
+    OPENROUTER_APP_TITLE: str = "agentic-rag"
+
+    LLM_MODEL_CLASSIFY: str = "google/gemini-2.5-flash"
+    LLM_MODEL_DECOMPOSE: str = "google/gemini-2.5-flash"
+    LLM_MODEL_ASSESS: str = "google/gemini-2.5-flash"
+    LLM_MODEL_REFORMULATE: str = "google/gemini-2.5-flash"
+    LLM_MODEL_GENERATE: str = "openai/gpt-4o"
+    EMBEDDING_MODEL: str = "openai/text-embedding-3-small"
+    EMBEDDING_DIMS: int = 1536
+
+    # ── Auth (Logto) ───────────────────────────────────────
+    LOGTO_ENDPOINT: str = ""           # e.g. https://your-tenant.logto.app
+    LOGTO_RESOURCE: str = ""           # API resource indicator (becomes `aud`)
+    LOGTO_APP_ID: str = ""             # M2M app ID (used by token-issuing clients)
+    LOGTO_APP_SECRET: str = ""         # M2M app secret (only needed by clients)
+
+    # ── PostgreSQL ─────────────────────────────────────────
+    POSTGRES_USER: str
+    POSTGRES_PASSWORD: str
+    POSTGRES_DB: str
+    POSTGRES_HOST: str = "postgres"    # in-Docker service name
+    POSTGRES_PORT: int = 5432          # in-container port
+    POSTGRES_HOST_PORT: int = 5433     # only used by docker-compose port mapping
+    # Optional override. Set this when running FastAPI from host (uv run uvicorn)
+    # against the Docker postgres on a non-default port:
+    #   DATABASE_URL=postgresql+asyncpg://raguser:ragpassword@localhost:5433/ragdb
+    DATABASE_URL: str = ""
+
+    # ── Redis ──────────────────────────────────────────────
+    REDIS_URL: str = "redis://redis:6379"
+    CELERY_BROKER_URL: str = "redis://redis:6379/0"
+    CELERY_RESULT_BACKEND: str = "redis://redis:6379/1"
+    SEMANTIC_CACHE_REDIS_URL: str = "redis://redis:6379/2"
+    CACHE_SIMILARITY_THRESHOLD: float = 0.88
+    CACHE_TTL_SECONDS: int = 86400
+
+    # ── Qdrant ─────────────────────────────────────────────
+    QDRANT_HOST: str = "qdrant"
+    QDRANT_PORT: int = 6333
+
+    # ── Agent tuning ───────────────────────────────────────
+    CONTEXT_SCORE_THRESHOLD: int = Field(default=7, ge=0, le=10)
+    MAX_RETRIEVAL_ITERATIONS: int = Field(default=3, ge=1)
+
+    # ── Langfuse (Phase 2) ─────────────────────────────────
+    LANGFUSE_PUBLIC_KEY: str = ""
+    LANGFUSE_SECRET_KEY: str = ""
+    LANGFUSE_HOST: str = "http://langfuse:3000"
+
+    # ── Derived ────────────────────────────────────────────
+    @cached_property
+    def database_url(self) -> str:
+        if self.DATABASE_URL:
+            return self.DATABASE_URL
+        return (
+            f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
+            f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+        )
+
+    @cached_property
+    def logto_jwks_uri(self) -> str:
+        return f"{self.LOGTO_ENDPOINT.rstrip('/')}/oidc/.well-known/jwks.json"
+
+    @cached_property
+    def logto_issuer(self) -> str:
+        return f"{self.LOGTO_ENDPOINT.rstrip('/')}/oidc"
+
+
+settings = Settings()

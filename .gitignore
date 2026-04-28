@@ -1,0 +1,37 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+
+# IDE / agent local state
+.idea/
+.vscode/
+*.swp
+.claude/settings.local.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project data (don't commit raw uploads or eval artifacts)
+data/uploads/*
+!data/uploads/.gitkeep
+data/eval/*
+!data/eval/.gitkeep
+
+# Logs / caches
+*.log
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
