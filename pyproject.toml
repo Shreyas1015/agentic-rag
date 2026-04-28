@@ -31,3 +31,33 @@ dev = [
     "pytest-asyncio>=1.3.0",
     "ruff>=0.15.12",
 ]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = ["-ra", "--strict-markers"]
+markers = [
+    "slow: tests that exceed a few seconds (Docling cold start, real LLM calls)",
+    "integration: tests that touch the live stack (postgres + qdrant + redis + OpenRouter)",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "N", "RUF"]
+ignore = ["E501"]   # line length handled by formatter
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's DI helpers ARE supposed to appear as default values; they're
+# inert markers, not eager calls. Ditto File/Form/Query/Path/Header.
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.File",
+    "fastapi.Form",
+    "fastapi.Header",
+    "fastapi.Path",
+    "fastapi.Query",
+]

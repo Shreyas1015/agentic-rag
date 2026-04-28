@@ -22,8 +22,8 @@ from pathlib import Path
 # Make the repo root importable when running as `python scripts/create_collections.py`
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from qdrant_client.http.exceptions import UnexpectedResponse  # noqa: E402
-from qdrant_client.models import (  # noqa: E402
+from qdrant_client.http.exceptions import UnexpectedResponse
+from qdrant_client.models import (
     Distance,
     Modifier,
     PayloadSchemaType,
@@ -32,8 +32,8 @@ from qdrant_client.models import (  # noqa: E402
     VectorParams,
 )
 
-from app.core.config import settings  # noqa: E402
-from app.core.qdrant_client import collection_name_for, get_qdrant_client  # noqa: E402
+from app.core.config import settings
+from app.core.qdrant_client import collection_name_for, get_qdrant_client
 
 
 def create_collection(tenant_id: str, *, recreate: bool = False) -> str:

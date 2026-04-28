@@ -112,7 +112,7 @@ async def _stream_agent(
                 text = getattr(chunk, "content", "") if chunk is not None else ""
                 if text:
                     yield _sse("token", {"text": text})
-    except Exception as exc:  # noqa: BLE001 — we want every error visible to the client
+    except Exception as exc:
         log.exception("chat stream agent error")
         yield _sse("error", {"message": str(exc)})
         return
@@ -133,7 +133,7 @@ async def _stream_agent(
             await write_cache(
                 query, tenant_id=tenant_id, embedding=embedding, response=payload
             )
-        except Exception:  # noqa: BLE001 — cache failures must never break the response
+        except Exception:
             log.exception("cache write failed (non-fatal)")
 
 
@@ -148,7 +148,7 @@ async def chat_stream(
     # Embed once, share with check + write so we don't pay twice.
     try:
         embedding = await embed_query_dense(query)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         log.exception("embedding failed")
         raise HTTPException(
             status.HTTP_502_BAD_GATEWAY, f"Embedding service error: {exc}"

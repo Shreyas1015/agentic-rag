@@ -22,11 +22,11 @@ from pathlib import Path
 # Make the repo root importable when running as `python scripts/seed_tenant.py`
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from sqlalchemy import select  # noqa: E402
+from sqlalchemy import select
 
-from app.core.qdrant_client import collection_name_for  # noqa: E402
-from app.db.models import Tenant  # noqa: E402
-from app.db.session import async_session_maker  # noqa: E402
+from app.core.qdrant_client import collection_name_for
+from app.db.models import Tenant
+from app.db.session import async_session_maker
 
 
 async def upsert_tenant(logto_org_id: str, name: str | None) -> Tenant:

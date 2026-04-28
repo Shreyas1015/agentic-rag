@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from qdrant_client.http.exceptions import UnexpectedResponse
 from qdrant_client.models import (
     FieldCondition,
     Filter,
@@ -67,16 +68,23 @@ async def hybrid_search(
     flt = _tenant_filter(tenant_id)
     collection = collection_name_for(tenant_id)
     qdrant = get_async_qdrant_client()
-    response = await qdrant.query_points(
-        collection_name=collection,
-        prefetch=[
-            Prefetch(query=dense_vec, using="dense", filter=flt, limit=top_k),
-            Prefetch(query=sparse_vec, using="bm25", filter=flt, limit=top_k),
-        ],
-        query=FusionQuery(fusion=Fusion.RRF),
-        limit=top_k,
-        with_payload=True,
-    )
+    try:
+        response = await qdrant.query_points(
+            collection_name=collection,
+            prefetch=[
+                Prefetch(query=dense_vec, using="dense", filter=flt, limit=top_k),
+                Prefetch(query=sparse_vec, using="bm25", filter=flt, limit=top_k),
+            ],
+            query=FusionQuery(fusion=Fusion.RRF),
+            limit=top_k,
+            with_payload=True,
+        )
+    except UnexpectedResponse as exc:
+        # No collection for this tenant => no data; same outcome as an empty
+        # collection. Re-raise anything else (auth, timeout, etc.).
+        if exc.status_code == 404:
+            return []
+        raise
 
     # 3) Adapt Qdrant ScoredPoint → our typed dataclass.
     out: list[RetrievedChunk] = []
