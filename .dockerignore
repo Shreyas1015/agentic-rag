@@ -1,0 +1,42 @@
+# Heavy / local-only directories
+.venv/
+.git/
+.github/
+.claude/
+docs/
+node_modules/
+
+# Python build / cache artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Local data — uploads are bind-mounted at runtime, never baked into the image
+data/uploads/*
+!data/uploads/.gitkeep
+data/eval/*
+!data/eval/.gitkeep
+
+# Secrets / local config
+.env
+.env.local
+.env.*.local
+.tmp_token
+
+# Editor / OS noise
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Don't recurse into the image's own deps when COPY . happens
+Dockerfile
+docker-compose.yml
+.dockerignore

@@ -32,7 +32,12 @@ class Settings(BaseSettings):
     EMBEDDING_DIMS: int = 1536
 
     # ── Auth (Logto) ───────────────────────────────────────
-    LOGTO_ENDPOINT: str = ""           # e.g. https://your-tenant.logto.app
+    LOGTO_ENDPOINT: str = ""           # public/advertised URL — DEFINES the issuer (`iss` claim)
+    # Optional service-to-service URL for JWKS fetch. Use this when the api
+    # runs inside Docker and reaches Logto via the compose service name
+    # (http://logto:3001) while tokens are issued/consumed using the public
+    # http://localhost:3001 URL. If empty, we fall back to LOGTO_ENDPOINT.
+    LOGTO_INTERNAL_ENDPOINT: str = ""
     LOGTO_RESOURCE: str = ""           # API resource indicator (becomes `aud`)
     LOGTO_APP_ID: str = ""             # M2M app ID (used by token-issuing clients)
     LOGTO_APP_SECRET: str = ""         # M2M app secret (only needed by clients)
@@ -89,8 +94,11 @@ class Settings(BaseSettings):
     @cached_property
     def logto_jwks_uri(self) -> str:
         # Logto exposes JWKS at /oidc/jwks (the value is also discoverable
-        # via /oidc/.well-known/openid-configuration → jwks_uri).
-        return f"{self.LOGTO_ENDPOINT.rstrip('/')}/oidc/jwks"
+        # via /oidc/.well-known/openid-configuration → jwks_uri). Prefer
+        # LOGTO_INTERNAL_ENDPOINT for the fetch since that's the
+        # service-to-service URL inside Docker.
+        base = self.LOGTO_INTERNAL_ENDPOINT or self.LOGTO_ENDPOINT
+        return f"{base.rstrip('/')}/oidc/jwks"
 
     @cached_property
     def logto_issuer(self) -> str:

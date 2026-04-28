@@ -129,10 +129,125 @@ services:
     networks:
       - ragnet
 
+  # ── DB migrate (one-shot) ──────────────────────────────────
+  # Runs `alembic upgrade head` once per `up`, then exits 0. Idempotent.
+  # api/worker depend on this completing successfully so they always start
+  # against an up-to-date schema.
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: agentic-rag-app:latest
+    container_name: agentic-rag-migrate
+    command: ["uv", "run", "alembic", "upgrade", "head"]
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_HOST_PORT: "5432"
+      DATABASE_URL: ""
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      - ragnet
+
+  # ── FastAPI app ────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: agentic-rag-app:latest
+    container_name: agentic-rag-api
+    restart: unless-stopped
+    command: ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    env_file: .env
+    # `environment:` overrides .env for in-Docker hostnames. The host-mode
+    # localhost values in .env are wrong from inside this container.
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_HOST_PORT: "5432"
+      DATABASE_URL: ""               # rebuilt from POSTGRES_*
+      REDIS_URL: redis://redis:6379
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      SEMANTIC_CACHE_REDIS_URL: redis://redis:6379/2
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: "6333"
+      # Logto: tokens carry iss=http://localhost:3001/oidc (set on the logto
+      # service so browser auth works), but service-to-service JWKS fetch
+      # uses the compose service name. require_auth still validates iss
+      # against the public LOGTO_ENDPOINT.
+      LOGTO_INTERNAL_ENDPOINT: http://logto:3001
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data/uploads:/app/data/uploads      # api saves uploaded PDFs here
+      - model_cache:/root/.cache              # share Docling/HF cache with worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      logto:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/health\", timeout=3)'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - ragnet
+
+  # ── Celery worker ──────────────────────────────────────────
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: agentic-rag-app:latest
+    container_name: agentic-rag-worker
+    restart: unless-stopped
+    command: ["uv", "run", "celery", "-A", "app.core.celery_app", "worker", "--loglevel=info"]
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_HOST_PORT: "5432"
+      DATABASE_URL: ""
+      REDIS_URL: redis://redis:6379
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      SEMANTIC_CACHE_REDIS_URL: redis://redis:6379/2
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: "6333"
+      LOGTO_INTERNAL_ENDPOINT: http://logto:3001
+    volumes:
+      - ./data/uploads:/app/data/uploads      # worker reads files saved by api
+      - model_cache:/root/.cache              # shared Docling/HF cache
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - ragnet
+
 volumes:
   postgres_data:
   redis_data:
   qdrant_data:
+  model_cache:
 
 networks:
   ragnet:
