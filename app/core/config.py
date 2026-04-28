@@ -65,6 +65,12 @@ class Settings(BaseSettings):
     CONTEXT_SCORE_THRESHOLD: int = Field(default=7, ge=0, le=10)
     MAX_RETRIEVAL_ITERATIONS: int = Field(default=3, ge=1)
 
+    # ── Ingestion ──────────────────────────────────────────
+    # OCR pulls a Chinese-host model on first run that often fails behind
+    # corporate proxies. Default off; in Docker we'll enable it (Step G uses
+    # the bundled tesseract from the image so no download is needed).
+    DOCLING_OCR_ENABLED: bool = False
+
     # ── Langfuse (Phase 2) ─────────────────────────────────
     LANGFUSE_PUBLIC_KEY: str = ""
     LANGFUSE_SECRET_KEY: str = ""
