@@ -130,6 +130,24 @@ async def fetch_parent_chunks(
     return list((await session.execute(stmt)).scalars().all())
 
 
+async def fetch_document_filenames(
+    session: AsyncSession,
+    *,
+    tenant_id: str,
+    document_ids: list[str],
+) -> dict[str, str]:
+    """Bulk lookup `document_id (UUID-as-str) -> filename` for citation rendering."""
+    if not document_ids:
+        return {}
+    uuids = [uuid.UUID(d) for d in document_ids]
+    stmt = select(Document.id, Document.filename).where(
+        Document.tenant_id == tenant_id,
+        Document.id.in_(uuids),
+    )
+    rows = (await session.execute(stmt)).all()
+    return {str(rid): name for rid, name in rows}
+
+
 async def mark_inactive(
     session: AsyncSession, document_id: uuid.UUID
 ) -> None:

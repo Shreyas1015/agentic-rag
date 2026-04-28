@@ -1,4 +1,4 @@
-"""Shared LLM clients pointed at OpenRouter.
+"""Shared LLM clients pointed at OpenRouter, plus small helpers.
 
 Two singletons:
   - get_openai_client() / get_async_openai_client():
@@ -15,7 +15,10 @@ attribution; both are sent automatically.
 
 from __future__ import annotations
 
+import json
+import re
 from functools import lru_cache
+from typing import Any
 
 from langchain_openai import ChatOpenAI
 from openai import AsyncOpenAI, OpenAI
@@ -46,6 +49,24 @@ def get_async_openai_client() -> AsyncOpenAI:
         base_url=settings.OPENROUTER_BASE_URL,
         default_headers=_default_headers(),
     )
+
+
+def extract_json(text: str) -> dict[str, Any] | list[Any]:
+    """Best-effort JSON extraction from an LLM response.
+
+    Models routed via OpenRouter sometimes ignore `response_format` (JSON
+    mode) and wrap their output in markdown fences. Try direct parse first,
+    then strip a ```json fence, then bail.
+    """
+    text = (text or "").strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    fence = re.search(r"```(?:json)?\s*(.+?)\s*```", text, re.DOTALL)
+    if fence:
+        return json.loads(fence.group(1))
+    raise ValueError(f"Could not parse JSON from LLM response: {text[:200]!r}")
 
 
 def get_chat_model(
