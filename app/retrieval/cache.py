@@ -51,19 +51,24 @@ def _cosine(a: list[float], b: list[float]) -> float:
     return float(np.dot(arr_a, arr_b) / denom)
 
 
-async def check_cache(query: str, *, tenant_id: str) -> dict[str, Any] | None:
+async def check_cache(
+    query: str,
+    *,
+    tenant_id: str,
+    embedding: list[float] | None = None,
+) -> dict[str, Any] | None:
     """Return the cached response if any tenant entry's embedding is similar
     enough to `query`'s embedding (cosine ≥ threshold), else None.
 
-    Computes the dense query embedding once per call. Misses are O(N) over
-    the tenant's cache — see module docstring."""
+    Pass `embedding` if you've already computed it (e.g. the chat endpoint
+    embeds once for both check + write); otherwise computed internally."""
     if not query.strip():
         return None
     r = _get_cache_redis()
 
     # Iterate just this tenant's entries (cheap on Phase-1 traffic).
     matches: list[tuple[float, dict]] = []
-    new_vec = await embed_query_dense(query)
+    new_vec = embedding if embedding is not None else await embed_query_dense(query)
     async for key in r.scan_iter(match=f"cache:{tenant_id}:*", count=100):
         raw = await r.get(key)
         if not raw:
