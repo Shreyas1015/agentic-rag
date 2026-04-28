@@ -82,7 +82,9 @@ class Settings(BaseSettings):
 
     @cached_property
     def logto_jwks_uri(self) -> str:
-        return f"{self.LOGTO_ENDPOINT.rstrip('/')}/oidc/.well-known/jwks.json"
+        # Logto exposes JWKS at /oidc/jwks (the value is also discoverable
+        # via /oidc/.well-known/openid-configuration → jwks_uri).
+        return f"{self.LOGTO_ENDPOINT.rstrip('/')}/oidc/jwks"
 
     @cached_property
     def logto_issuer(self) -> str:

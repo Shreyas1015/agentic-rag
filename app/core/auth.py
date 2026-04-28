@@ -1,8 +1,22 @@
 """Logto access-token verification for FastAPI.
 
-Verifies tokens against Logto's JWKS endpoint using PyJWT. The tenant_id
-for the request is the `organization_id` claim Logto adds when a token
-is minted for a specific organization.
+We follow Logto's "Organization-level API resources" permission model
+(see https://docs.logto.io/authorization). Concretely the access tokens we
+accept must carry:
+
+  iss              = {LOGTO_ENDPOINT}/oidc
+  aud              = LOGTO_RESOURCE                  (the API resource indicator)
+  organization_id  = the tenant's Logto org id       (required by require_tenant)
+  scope            = space-separated permissions     (checked by require_scopes)
+
+Signature verification uses PyJWT against Logto's JWKS endpoint
+({LOGTO_ENDPOINT}/oidc/jwks). Logto OSS signs with ES384 by default;
+ES256 / RS256 are kept in the algorithms list as forward compatibility.
+
+`require_auth`     -> verifies + parses the token, returns AuthInfo
+`require_tenant`   -> AuthInfo whose organization_id is non-empty (->tenant_id)
+`require_scopes`   -> dependency factory; checks AuthInfo.scopes contains all
+                      of the listed scopes (Phase 2 RBAC plumbing).
 """
 
 from functools import lru_cache
@@ -39,15 +53,25 @@ def _jwks_client() -> PyJWKClient:
 async def require_auth(
     credentials: HTTPAuthorizationCredentials = Depends(_security),
 ) -> AuthInfo:
+    if not settings.LOGTO_RESOURCE:
+        # Refuse to validate at all if the audience is unset — silently skipping
+        # the aud check would let tokens minted for a different API into ours.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Auth misconfigured: LOGTO_RESOURCE not set.",
+        )
     token = credentials.credentials
     try:
         signing_key = _jwks_client().get_signing_key_from_jwt(token)
         payload = jwt.decode(
             token,
             signing_key.key,
-            algorithms=["RS256", "ES256"],
-            audience=settings.LOGTO_RESOURCE or None,
+            # Logto OSS signs with ES384 by default; ES256/RS256 kept for
+            # tenants that have rotated/changed signing keys.
+            algorithms=["ES384", "ES256", "RS256"],
+            audience=settings.LOGTO_RESOURCE,
             issuer=settings.logto_issuer,
+            options={"require": ["exp", "iat", "iss", "aud", "sub"]},
         )
     except jwt.InvalidTokenError as exc:
         raise HTTPException(
@@ -80,3 +104,27 @@ async def require_tenant(auth: AuthInfo = Depends(require_auth)) -> str:
             detail="Token has no organization context (organization_id claim missing).",
         )
     return auth.organization_id
+
+
+def require_scopes(*needed: str):
+    """Dependency factory: returns a FastAPI dep that 403s unless the token
+    carries every scope in `needed`.
+
+    Usage:
+        @router.post("/ingest", dependencies=[Depends(require_scopes("ingest:write"))])
+
+    We don't enforce scopes anywhere yet (Phase 1 only checks
+    authentication + tenant). This stub locks the API contract for Phase 2 RBAC.
+    Roles -> scopes mapping is configured in the Logto admin console.
+    """
+
+    async def _checker(auth: AuthInfo = Depends(require_auth)) -> AuthInfo:
+        missing = [s for s in needed if s not in auth.scopes]
+        if missing:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Missing required scope(s): {', '.join(missing)}",
+            )
+        return auth
+
+    return _checker

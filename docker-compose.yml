@@ -69,6 +69,66 @@ services:
     networks:
       - ragnet
 
+  # ── Logto OSS (self-hosted auth) ───────────────────────────
+  # Free, self-hosted alternative to Logto Cloud. Provides everything
+  # the Cloud Pro tier does — for the cost of running this container.
+  #   :3001  → OIDC + API   (apps point LOGTO_ENDPOINT here)
+  #   :3002  → Admin console UI
+  # Shares the postgres container with a dedicated `logto` database.
+
+  # One-shot: create the `logto` database if it doesn't exist (idempotent).
+  logto-db-create:
+    image: postgres:16-alpine
+    container_name: agentic-rag-logto-db-create
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        psql -h postgres -U ${POSTGRES_USER} -d postgres -tc "SELECT 1 FROM pg_database WHERE datname='logto'" | grep -q 1 \
+          || psql -h postgres -U ${POSTGRES_USER} -d postgres -c 'CREATE DATABASE logto'
+    restart: "no"
+    networks:
+      - ragnet
+
+  logto:
+    image: svhd/logto:latest
+    container_name: agentic-rag-logto
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      logto-db-create:
+        condition: service_completed_successfully
+    environment:
+      TRUST_PROXY_HEADER: "1"
+      PORT: "3001"
+      ADMIN_PORT: "3002"
+      DB_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/logto
+      ENDPOINT: ${LOGTO_ENDPOINT:-http://localhost:3001}
+      ADMIN_ENDPOINT: ${LOGTO_ADMIN_ENDPOINT:-http://localhost:3002}
+      # Required for the Logto Secret Vault. In dev we let it auto-generate; for
+      # production deployments, generate once with `openssl rand -base64 32` and
+      # set LOGTO_SECRET_VAULT_KEK in the deploy environment so secrets remain
+      # decryptable across container restarts.
+      SECRET_VAULT_KEK: ${LOGTO_SECRET_VAULT_KEK:-}
+    ports:
+      - "3001:3001"   # OIDC / API
+      - "3002:3002"   # Admin console
+    # Seed the schema if empty, then run. `seed` is idempotent — exits 0 if already seeded.
+    entrypoint: ["sh", "-c", "npm run cli db seed || true; npm start"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/oidc/.well-known/openid-configuration > /dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - ragnet
+
 volumes:
   postgres_data:
   redis_data:
