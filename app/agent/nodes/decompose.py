@@ -9,10 +9,12 @@ from __future__ import annotations
 import logging
 
 from langchain_core.messages import HumanMessage, SystemMessage
+from langfuse import observe
 
 from app.agent.state import AgentState
 from app.core.config import settings
 from app.core.llm import extract_json, get_chat_model
+from app.observability.langfuse_client import langfuse
 
 log = logging.getLogger(__name__)
 
@@ -26,6 +28,7 @@ Rules:
 Reply ONLY with valid JSON: {"sub_questions": ["...", "..."]}"""
 
 
+@observe(name="decompose")
 async def decompose_question(state: AgentState) -> dict:
     query = state["query"]
     model = get_chat_model(
@@ -44,4 +47,9 @@ async def decompose_question(state: AgentState) -> dict:
         log.warning("decompose: parse failed (%s); falling back to original query", exc)
         subs = [query]
 
+    langfuse.update_current_span(
+        input={"query": query},
+        output={"sub_questions": subs},
+        metadata={"count": len(subs), "model": settings.LLM_MODEL_DECOMPOSE},
+    )
     return {"sub_questions": subs}

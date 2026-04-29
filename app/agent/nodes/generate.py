@@ -15,12 +15,14 @@ from __future__ import annotations
 import logging
 
 from langchain_core.messages import HumanMessage, SystemMessage
+from langfuse import observe
 
 from app.agent.state import AgentState
 from app.core.config import settings
 from app.core.llm import get_chat_model
 from app.db import crud
 from app.db.session import async_session_maker
+from app.observability.langfuse_client import langfuse
 
 log = logging.getLogger(__name__)
 
@@ -44,6 +46,7 @@ def _format_context(parent_chunks: list[dict], filenames: dict[str, str]) -> str
     return "\n\n---\n\n".join(blocks)
 
 
+@observe(name="generate", as_type="generation")
 async def generate_answer(state: AgentState) -> dict:
     parent_chunks = state.get("parent_chunks") or []
     tenant_id = state["tenant_id"]
@@ -60,6 +63,11 @@ async def generate_answer(state: AgentState) -> dict:
         filenames = {}
 
     if not parent_chunks:
+        langfuse.update_current_generation(
+            input=[{"role": "user", "content": question}],
+            output={"answer": "no parent chunks"},
+            metadata={"reason": "empty_context"},
+        )
         return {
             "final_answer": "The provided documents don't contain enough information to answer that.",
             "citations": [],
@@ -95,7 +103,22 @@ async def generate_answer(state: AgentState) -> dict:
             }
         )
 
+    answer = (response.content or "").strip()
+    langfuse.update_current_generation(
+        input=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_message},
+        ],
+        output=answer,
+        model=settings.LLM_MODEL_GENERATE,
+        metadata={
+            "context_score": state.get("context_score"),
+            "iteration": int(state.get("iteration", 0)),
+            "citations": len(citations),
+            "documents": len(filenames),
+        },
+    )
     return {
-        "final_answer": (response.content or "").strip(),
+        "final_answer": answer,
         "citations": citations,
     }

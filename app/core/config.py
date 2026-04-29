@@ -77,9 +77,11 @@ class Settings(BaseSettings):
     DOCLING_OCR_ENABLED: bool = False
 
     # ── Langfuse (Phase 2) ─────────────────────────────────
+    # When unset, tracing is disabled (every @observe becomes a no-op).
+    # In Docker, compose overrides LANGFUSE_HOST to http://langfuse-web:3000.
     LANGFUSE_PUBLIC_KEY: str = ""
     LANGFUSE_SECRET_KEY: str = ""
-    LANGFUSE_HOST: str = "http://langfuse:3000"
+    LANGFUSE_HOST: str = "http://localhost:3000"
 
     # ── Derived ────────────────────────────────────────────
     @cached_property

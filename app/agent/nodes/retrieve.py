@@ -10,7 +10,10 @@ from __future__ import annotations
 import asyncio
 from dataclasses import asdict
 
+from langfuse import observe
+
 from app.agent.state import AgentState
+from app.observability.langfuse_client import langfuse
 from app.retrieval.hybrid_search import RetrievedChunk, hybrid_search
 
 TOP_K = 30
@@ -27,6 +30,7 @@ def _dedupe_keep_best(buckets: list[list[RetrievedChunk]]) -> list[RetrievedChun
     return sorted(best.values(), key=lambda h: h.score, reverse=True)
 
 
+@observe(name="retrieve")
 async def retrieve(state: AgentState) -> dict:
     tenant_id = state["tenant_id"]
     sub_questions = state.get("sub_questions") or []
@@ -40,7 +44,18 @@ async def retrieve(state: AgentState) -> dict:
             )
         )
         merged = _dedupe_keep_best(buckets)[:TOP_K]
+        search_mode = "multi_part"
     else:
         merged = await hybrid_search(state["query"], tenant_id=tenant_id, top_k=TOP_K)
+        search_mode = "single"
 
+    langfuse.update_current_span(
+        input={"query": state["query"], "sub_questions": sub_questions},
+        output={"hits": len(merged)},
+        metadata={
+            "mode": search_mode,
+            "top_k": TOP_K,
+            "top_5_scores": [round(c.score, 4) for c in merged[:5]],
+        },
+    )
     return {"retrieved_chunks": [asdict(c) for c in merged]}

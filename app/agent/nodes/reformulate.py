@@ -9,10 +9,12 @@ from __future__ import annotations
 import logging
 
 from langchain_core.messages import HumanMessage, SystemMessage
+from langfuse import observe
 
 from app.agent.state import AgentState
 from app.core.config import settings
 from app.core.llm import extract_json, get_chat_model
+from app.observability.langfuse_client import langfuse
 
 log = logging.getLogger(__name__)
 
@@ -27,6 +29,7 @@ Strategies:
 Reply ONLY with valid JSON: {"query": "<rewritten question>"}"""
 
 
+@observe(name="reformulate")
 async def reformulate_query(state: AgentState) -> dict:
     original = state.get("original_query") or state["query"]
     reason = state.get("context_reason") or "previous chunks were insufficient"
@@ -54,6 +57,11 @@ async def reformulate_query(state: AgentState) -> dict:
     except (ValueError, AttributeError) as exc:
         log.warning("reformulate: parse failed (%s); keeping prior query", exc)
 
+    langfuse.update_current_span(
+        input={"prior_query": state["query"], "reason": reason, "iteration": iteration - 1},
+        output={"new_query": new_query, "iteration": iteration},
+        metadata={"model": settings.LLM_MODEL_REFORMULATE, "max_iterations": settings.MAX_RETRIEVAL_ITERATIONS},
+    )
     # multi_part: clear sub_questions so retrieve treats this as a single query
     return {
         "query": new_query,

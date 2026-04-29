@@ -181,6 +181,9 @@ services:
       # uses the compose service name. require_auth still validates iss
       # against the public LOGTO_ENDPOINT.
       LOGTO_INTERNAL_ENDPOINT: http://logto:3001
+      # Langfuse: from inside the docker network, hit the service name. From
+      # host-mode dev (.env), it's http://localhost:3000.
+      LANGFUSE_HOST: http://langfuse-web:3000
     ports:
       - "8000:8000"
     volumes:
@@ -228,6 +231,7 @@ services:
       QDRANT_HOST: qdrant
       QDRANT_PORT: "6333"
       LOGTO_INTERNAL_ENDPOINT: http://logto:3001
+      LANGFUSE_HOST: http://langfuse-web:3000
     volumes:
       - ./data/uploads:/app/data/uploads      # worker reads files saved by api
       - model_cache:/root/.cache              # shared Docling/HF cache
@@ -243,11 +247,170 @@ services:
     networks:
       - ragnet
 
+  # ── Langfuse OSS (self-hosted observability) ───────────────
+  # Trace tree per /chat/stream request. UI at :3000.
+  # Service group:
+  #   langfuse-db-create  one-shot — CREATE DATABASE langfuse in our postgres
+  #   clickhouse          analytics DB (Langfuse v3 requirement)
+  #   minio               S3-compatible blob store for trace events + media
+  #   langfuse-worker     async event ingestion / scoring
+  #   langfuse-web        UI + ingest API on :3000
+  # Reuses our existing postgres (separate `langfuse` DB) and existing redis
+  # (REDIS_AUTH set to '' since our redis container is unauthenticated).
+
+  langfuse-db-create:
+    image: postgres:16-alpine
+    container_name: agentic-rag-langfuse-db-create
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        psql -h postgres -U ${POSTGRES_USER} -d postgres -tc "SELECT 1 FROM pg_database WHERE datname='langfuse'" | grep -q 1 \
+          || psql -h postgres -U ${POSTGRES_USER} -d postgres -c 'CREATE DATABASE langfuse'
+    restart: "no"
+    networks:
+      - ragnet
+
+  clickhouse:
+    image: clickhouse/clickhouse-server
+    container_name: agentic-rag-clickhouse
+    restart: unless-stopped
+    user: "101:101"
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - clickhouse_logs:/var/log/clickhouse-server
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - ragnet
+
+  minio:
+    image: minio/minio
+    container_name: agentic-rag-minio
+    restart: unless-stopped
+    entrypoint: sh
+    command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: miniosecret
+    ports:
+      - "127.0.0.1:9090:9000"   # S3 API (host access — debugging only)
+      - "127.0.0.1:9091:9001"   # MinIO console UI
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - ragnet
+
+  langfuse-worker:
+    image: langfuse/langfuse-worker:3
+    container_name: agentic-rag-langfuse-worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      langfuse-db-create:
+        condition: service_completed_successfully
+    environment: &langfuse_environment
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/langfuse
+      SALT: ${LANGFUSE_SALT:-mysalt}
+      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000000}
+      TELEMETRY_ENABLED: "true"
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "false"
+      CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
+      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse
+      CLICKHOUSE_CLUSTER_ENABLED: "false"
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: minio
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: miniosecret
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://minio:9000
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
+      LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
+      LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: minio
+      LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: miniosecret
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://minio:9000
+      LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: media/
+      LANGFUSE_S3_BATCH_EXPORT_ENABLED: "false"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_AUTH: ""    # our redis runs without auth
+      REDIS_TLS_ENABLED: "false"
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-mysecret}
+      NEXTAUTH_URL: ${LANGFUSE_NEXTAUTH_URL:-http://localhost:3000}
+    networks:
+      - ragnet
+
+  langfuse-web:
+    image: langfuse/langfuse:3
+    container_name: agentic-rag-langfuse-web
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      langfuse-db-create:
+        condition: service_completed_successfully
+    environment:
+      <<: *langfuse_environment
+      # Auto-onboard on first start so we don't have to click through the UI
+      # to mint API keys. The PUBLIC/SECRET keys below are also what the api
+      # and worker use as LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY.
+      LANGFUSE_INIT_ORG_ID: ${LANGFUSE_INIT_ORG_ID:-agentic-rag-org}
+      LANGFUSE_INIT_ORG_NAME: ${LANGFUSE_INIT_ORG_NAME:-Agentic RAG}
+      LANGFUSE_INIT_PROJECT_ID: ${LANGFUSE_INIT_PROJECT_ID:-agentic-rag}
+      LANGFUSE_INIT_PROJECT_NAME: ${LANGFUSE_INIT_PROJECT_NAME:-agentic-rag}
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-pk-lf-agentic-rag-local-dev}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-sk-lf-agentic-rag-local-dev-change-me-in-prod}
+      LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_USER_EMAIL:-admin@agentic-rag.local}
+      LANGFUSE_INIT_USER_NAME: ${LANGFUSE_INIT_USER_NAME:-Admin}
+      LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD:-changeme123!}
+    ports:
+      - "3000:3000"
+    networks:
+      - ragnet
+
 volumes:
   postgres_data:
   redis_data:
   qdrant_data:
   model_cache:
+  clickhouse_data:
+  clickhouse_logs:
+  minio_data:
 
 networks:
   ragnet:

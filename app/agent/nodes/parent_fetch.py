@@ -8,15 +8,22 @@ relevant context lands first in the LLM prompt.
 
 from __future__ import annotations
 
+from langfuse import observe
+
 from app.agent.state import AgentState
 from app.db import crud
 from app.db.session import async_session_maker
+from app.observability.langfuse_client import langfuse
 
 
+@observe(name="parent_fetch")
 async def parent_fetch(state: AgentState) -> dict:
     tenant_id = state["tenant_id"]
     children = state.get("retrieved_chunks") or []
     if not children:
+        langfuse.update_current_span(
+            output={"parents": 0}, metadata={"reason": "no retrieved_chunks"}
+        )
         return {"parent_chunks": []}
 
     # Preserve the order in which each parent first appears.
@@ -50,4 +57,9 @@ async def parent_fetch(state: AgentState) -> dict:
             }
         )
 
+    langfuse.update_current_span(
+        input={"unique_parent_ids": len(ordered_parent_ids)},
+        output={"parents": len(parents)},
+        metadata={"pages": sorted({p["page_num"] for p in parents if p.get("page_num")})},
+    )
     return {"parent_chunks": parents}

@@ -32,6 +32,7 @@ from app.agent.graph import build_graph
 from app.core.auth import require_tenant
 from app.core.qdrant_client import collection_name_for
 from app.ingestion.embedder import embed_query_dense
+from app.observability.langfuse_client import current_trace_id, langfuse
 from app.retrieval.cache import check_cache, write_cache
 
 log = logging.getLogger(__name__)
@@ -87,47 +88,65 @@ async def _stream_agent(
     final_state: dict[str, Any] = {}
     in_generate = False  # token events only fire while the generate node is active
 
-    try:
-        async for ev in graph.astream_events(initial, version="v2"):
-            kind = ev.get("event", "")
-            name = ev.get("name", "")
+    # Root span — every @observe inside the graph becomes a child, sharing
+    # one trace_id we surface in the `done` event so /feedback can target it.
+    with langfuse.start_as_current_observation(
+        name="chat.stream",
+        as_type="agent",
+        input={"query": query, "tenant_id": tenant_id},
+    ):
+        trace_id = current_trace_id()
 
-            if kind == "on_chain_start" and name in _NODE_MESSAGES:
-                if name == "generate":
-                    in_generate = True
-                yield _sse(
-                    "status", {"node": name, "message": _NODE_MESSAGES[name]}
-                )
+        try:
+            async for ev in graph.astream_events(initial, version="v2"):
+                kind = ev.get("event", "")
+                name = ev.get("name", "")
 
-            elif kind == "on_chain_end" and name in _NODE_MESSAGES:
-                if name == "generate":
-                    in_generate = False
-                # Each node returns a partial state update — accumulate.
-                update = (ev.get("data") or {}).get("output")
-                if isinstance(update, dict):
-                    final_state.update(update)
+                if kind == "on_chain_start" and name in _NODE_MESSAGES:
+                    if name == "generate":
+                        in_generate = True
+                    yield _sse(
+                        "status", {"node": name, "message": _NODE_MESSAGES[name]}
+                    )
 
-            elif kind == "on_chat_model_stream" and in_generate:
-                chunk = (ev.get("data") or {}).get("chunk")
-                text = getattr(chunk, "content", "") if chunk is not None else ""
-                if text:
-                    yield _sse("token", {"text": text})
-    except Exception as exc:
-        log.exception("chat stream agent error")
-        yield _sse("error", {"message": str(exc)})
-        return
+                elif kind == "on_chain_end" and name in _NODE_MESSAGES:
+                    if name == "generate":
+                        in_generate = False
+                    # Each node returns a partial state update — accumulate.
+                    update = (ev.get("data") or {}).get("output")
+                    if isinstance(update, dict):
+                        final_state.update(update)
 
-    # Done event with the full payload.
-    payload = {
-        "answer": final_state.get("final_answer", ""),
-        "citations": final_state.get("citations", []),
-        "context_score": final_state.get("context_score"),
-        "iteration": final_state.get("iteration", 0),
-        "from_cache": False,
-    }
+                elif kind == "on_chat_model_stream" and in_generate:
+                    chunk = (ev.get("data") or {}).get("chunk")
+                    text = getattr(chunk, "content", "") if chunk is not None else ""
+                    if text:
+                        yield _sse("token", {"text": text})
+        except Exception as exc:
+            log.exception("chat stream agent error")
+            yield _sse("error", {"message": str(exc), "trace_id": trace_id})
+            return
+
+        payload = {
+            "answer": final_state.get("final_answer", ""),
+            "citations": final_state.get("citations", []),
+            "context_score": final_state.get("context_score"),
+            "iteration": final_state.get("iteration", 0),
+            "from_cache": False,
+            "trace_id": trace_id,
+        }
+        langfuse.update_current_span(
+            output={
+                "answer_length": len(payload["answer"]),
+                "citations": len(payload["citations"]),
+                "context_score": payload["context_score"],
+                "iteration": payload["iteration"],
+            },
+        )
+
+    # Yield + cache write happen *outside* the span so the trace closes promptly.
     yield _sse("done", payload)
 
-    # Cache the result for next time (don't cache empty / error answers).
     if payload["answer"]:
         try:
             await write_cache(

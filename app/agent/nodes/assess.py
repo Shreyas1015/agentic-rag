@@ -11,10 +11,12 @@ from __future__ import annotations
 import logging
 
 from langchain_core.messages import HumanMessage, SystemMessage
+from langfuse import observe
 
 from app.agent.state import AgentState
 from app.core.config import settings
 from app.core.llm import extract_json, get_chat_model
+from app.observability.langfuse_client import langfuse
 
 log = logging.getLogger(__name__)
 
@@ -40,9 +42,13 @@ def _format_chunks(parent_chunks: list[dict]) -> str:
     )
 
 
+@observe(name="assess")
 async def assess_context(state: AgentState) -> dict:
     parent_chunks = state.get("parent_chunks") or []
     if not parent_chunks:
+        langfuse.update_current_span(
+            output={"score": 0.0}, metadata={"reason": "no parent chunks"}
+        )
         return {"context_score": 0.0, "context_reason": "no parent chunks were retrieved"}
 
     user_message = (
@@ -67,4 +73,14 @@ async def assess_context(state: AgentState) -> dict:
         log.warning("assess: parse failed (%s); defaulting score=0", exc)
 
     score = max(0.0, min(10.0, score))
+    langfuse.update_current_span(
+        input={"query": state["query"], "chunks": len(parent_chunks)},
+        output={"score": score, "reason": reason},
+        metadata={
+            "threshold": settings.CONTEXT_SCORE_THRESHOLD,
+            "passes": score >= settings.CONTEXT_SCORE_THRESHOLD,
+            "iteration": int(state.get("iteration", 0)),
+            "model": settings.LLM_MODEL_ASSESS,
+        },
+    )
     return {"context_score": score, "context_reason": reason}
