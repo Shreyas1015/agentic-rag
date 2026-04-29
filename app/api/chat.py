@@ -144,7 +144,8 @@ async def _stream_agent(
             },
         )
 
-    # Yield + cache write happen *outside* the span so the trace closes promptly.
+    # Yield + cache write + RAGAS scoring happen *outside* the span so the
+    # trace closes promptly.
     yield _sse("done", payload)
 
     if payload["answer"]:
@@ -154,6 +155,28 @@ async def _stream_agent(
             )
         except Exception:
             log.exception("cache write failed (non-fatal)")
+
+        # Fire-and-forget RAGAS eval — writes scores to eval_logs + pushes
+        # back to the Langfuse trace. Never blocks the user response.
+        try:
+            from app.ingestion.tasks import score_and_log
+
+            score_and_log.apply_async(
+                kwargs={
+                    "trace_id": payload.get("trace_id"),
+                    "tenant_id": tenant_id,
+                    "query": query,
+                    "answer": payload["answer"],
+                    "contexts": [
+                        pc.get("text", "")
+                        for pc in (final_state.get("parent_chunks") or [])
+                        if pc.get("text")
+                    ],
+                    "context_score": payload.get("context_score"),
+                }
+            )
+        except Exception:
+            log.exception("ragas dispatch failed (non-fatal)")
 
 
 @router.post("/stream", summary="Submit a query, receive an SSE stream")

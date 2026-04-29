@@ -121,7 +121,7 @@ async def faithfulness_check(state: AgentState) -> dict:
             score, THRESHOLD, len(unsupported),
         )
         # Reuse generate.py's source-formatting (filenames + page numbers).
-        from app.agent.nodes.generate import _format_context  # noqa: PLC0415
+        from app.agent.nodes.generate import _format_context
         from app.db import crud
         from app.db.session import async_session_maker
 

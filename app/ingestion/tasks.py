@@ -41,6 +41,94 @@ def ping(message: str = "pong") -> dict:
 
 
 @celery_app.task(
+    name="observability.score_and_log",
+    bind=True,
+    max_retries=2,
+    default_retry_delay=15,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_jitter=True,
+    ignore_result=True,
+)
+def score_and_log(
+    self,
+    *,
+    trace_id: str | None,
+    tenant_id: str,
+    query: str,
+    answer: str,
+    contexts: list[str],
+    context_score: float | None = None,
+    ground_truth: str | None = None,
+) -> dict:
+    """Run RAGAS on a completed (query, answer, contexts) triple, write a
+    row into eval_logs, and push the scores back onto the Langfuse trace.
+
+    Fires fire-and-forget from /chat/stream after the `done` event lands.
+    Failures retry twice but never block the user — if eval is broken,
+    the user already has their answer.
+    """
+    return asyncio.run(
+        _score_and_log_async(
+            trace_id=trace_id,
+            tenant_id=tenant_id,
+            query=query,
+            answer=answer,
+            contexts=contexts,
+            context_score=context_score,
+            ground_truth=ground_truth,
+        )
+    )
+
+
+async def _score_and_log_async(
+    *,
+    trace_id: str | None,
+    tenant_id: str,
+    query: str,
+    answer: str,
+    contexts: list[str],
+    context_score: float | None,
+    ground_truth: str | None,
+) -> dict:
+    # Lazy imports to avoid pulling RAGAS into the api hot path.
+    from app.db.models import EvalLog
+    from app.observability.langfuse_client import langfuse
+    from app.observability.ragas_eval import score as ragas_score
+
+    scores = await ragas_score(query, answer, contexts, ground_truth=ground_truth)
+
+    # Persist to eval_logs.
+    async with async_session_maker() as session:
+        row = EvalLog(
+            trace_id=trace_id,
+            tenant_id=tenant_id,
+            query=query,
+            faithfulness=scores.get("faithfulness"),
+            answer_relevancy=scores.get("answer_relevancy"),
+            context_precision=scores.get("context_precision"),
+            context_recall=scores.get("context_recall"),
+            context_score=context_score,
+        )
+        session.add(row)
+        await session.commit()
+
+    # Push each non-null score back to the Langfuse trace.
+    if trace_id:
+        try:
+            for name, val in scores.items():
+                if val is None:
+                    continue
+                langfuse.create_score(name=f"ragas.{name}", value=val, trace_id=trace_id)
+            langfuse.flush()
+        except Exception:
+            # Never let observability failures take down the task.
+            pass
+
+    return scores
+
+
+@celery_app.task(
     name="ingestion.ingest_document",
     bind=True,
     max_retries=3,
