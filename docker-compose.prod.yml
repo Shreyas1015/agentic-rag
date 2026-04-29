@@ -1,0 +1,104 @@
+name: agentic-rag
+
+# Production overlay. Apply with:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# What this overlay changes vs the base dev compose:
+#   - Removes host port mappings from internal-only services (postgres,
+#     redis, qdrant, clickhouse, minio API, langfuse-worker). Only api,
+#     logto, and langfuse-web stay public — everything else is reachable
+#     only on the docker network. Dokploy's reverse proxy (Traefik) is
+#     expected to terminate TLS in front of the public services.
+#   - `restart: always` everywhere (Dokploy default).
+#   - Drops the bind mount on data/uploads — uses a named volume
+#     `uploads_data` instead so a clean redeploy keeps user files.
+#   - All Langfuse / Logto secrets are MANDATORY (`${VAR:?...}`) so
+#     `docker compose config` fails loudly if a required secret is unset.
+#   - Public URLs (LOGTO_ENDPOINT, LANGFUSE_HOST, NEXTAUTH_URL) come from
+#     env, not localhost defaults — set them per Dokploy domain.
+
+services:
+
+  postgres:
+    restart: always
+    ports: !reset []      # internal only
+
+  redis:
+    restart: always
+    ports: !reset []      # internal only
+
+  qdrant:
+    restart: always
+    ports: !reset []      # internal only — api hits qdrant:6333 inside docker
+
+  clickhouse:
+    restart: always
+    ports: !reset []
+
+  minio:
+    restart: always
+    ports: !reset []
+
+  logto-db-create:
+    restart: "no"
+
+  langfuse-db-create:
+    restart: "no"
+
+  logto:
+    restart: always
+    # In prod, ENDPOINT must be the public URL behind Traefik.
+    environment:
+      ENDPOINT: ${LOGTO_ENDPOINT:?LOGTO_ENDPOINT must be set in prod (public URL)}
+      ADMIN_ENDPOINT: ${LOGTO_ADMIN_ENDPOINT:?LOGTO_ADMIN_ENDPOINT must be set}
+      SECRET_VAULT_KEK: ${LOGTO_SECRET_VAULT_KEK:?LOGTO_SECRET_VAULT_KEK must be set (openssl rand -base64 32)}
+
+  langfuse-web:
+    restart: always
+    environment:
+      NEXTAUTH_URL: ${LANGFUSE_NEXTAUTH_URL:?LANGFUSE_NEXTAUTH_URL must be set (public URL)}
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:?LANGFUSE_NEXTAUTH_SECRET must be set}
+      SALT: ${LANGFUSE_SALT:?LANGFUSE_SALT must be set (openssl rand -hex 32)}
+      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:?LANGFUSE_ENCRYPTION_KEY must be set (openssl rand -hex 32)}
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:?LANGFUSE_PUBLIC_KEY must be set}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_SECRET_KEY:?LANGFUSE_SECRET_KEY must be set}
+      LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD:?LANGFUSE_INIT_USER_PASSWORD must be set (admin password)}
+
+  langfuse-worker:
+    restart: always
+    environment:
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:?LANGFUSE_NEXTAUTH_SECRET must be set}
+      SALT: ${LANGFUSE_SALT:?LANGFUSE_SALT must be set}
+      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:?LANGFUSE_ENCRYPTION_KEY must be set}
+
+  migrate:
+    restart: "no"
+
+  api:
+    restart: always
+    # Use a named volume so user files persist across redeploys without
+    # depending on a host path. Dokploy will manage backups of the volume.
+    volumes:
+      - uploads_data:/app/data/uploads
+      - model_cache:/root/.cache
+    environment:
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?OPENROUTER_API_KEY must be set}
+      LOGTO_ENDPOINT: ${LOGTO_ENDPOINT:?LOGTO_ENDPOINT must be set}
+      LOGTO_RESOURCE: ${LOGTO_RESOURCE:?LOGTO_RESOURCE must be set}
+      LANGFUSE_HOST: http://langfuse-web:3000     # internal — never public
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:?LANGFUSE_PUBLIC_KEY must be set}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:?LANGFUSE_SECRET_KEY must be set}
+
+  worker:
+    restart: always
+    volumes:
+      - uploads_data:/app/data/uploads
+      - model_cache:/root/.cache
+    environment:
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?OPENROUTER_API_KEY must be set}
+      LANGFUSE_HOST: http://langfuse-web:3000
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:?LANGFUSE_PUBLIC_KEY must be set}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:?LANGFUSE_SECRET_KEY must be set}
+
+volumes:
+  uploads_data:
