@@ -25,7 +25,13 @@
                                         │      └► retrieve  │
                                         │                   │
                                         ▼                   ▼
+                                  faithfulness        faithfulness
+                                        │                   │
+                                        ▼                   ▼
                                        END                 END
+
+Faithfulness verifies the answer against parent_chunks; if score < 0.85,
+it regenerates ONCE with the unsupported claims excluded.
 """
 
 from __future__ import annotations
@@ -35,6 +41,7 @@ from langgraph.graph import END, StateGraph
 from app.agent.nodes.assess import assess_context
 from app.agent.nodes.classify import classify_query
 from app.agent.nodes.decompose import decompose_question
+from app.agent.nodes.faithfulness import faithfulness_check
 from app.agent.nodes.generate import generate_answer
 from app.agent.nodes.parent_fetch import parent_fetch
 from app.agent.nodes.reformulate import reformulate_query
@@ -70,6 +77,7 @@ def build_graph():
     g.add_node("assess", assess_context)
     g.add_node("reformulate", reformulate_query)
     g.add_node("generate", generate_answer)
+    g.add_node("faithfulness", faithfulness_check)
 
     g.set_entry_point("classify")
 
@@ -89,6 +97,7 @@ def build_graph():
         {"generate": "generate", "reformulate": "reformulate"},
     )
     g.add_edge("reformulate", "retrieve")
-    g.add_edge("generate", END)
+    g.add_edge("generate", "faithfulness")
+    g.add_edge("faithfulness", END)
 
     return g.compile()
