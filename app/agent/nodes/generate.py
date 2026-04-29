@@ -22,7 +22,7 @@ from app.core.config import settings
 from app.core.llm import get_chat_model
 from app.db import crud
 from app.db.session import async_session_maker
-from app.observability.langfuse_client import langfuse
+from app.observability.langfuse_client import langfuse, usage_from_response
 
 log = logging.getLogger(__name__)
 
@@ -104,19 +104,22 @@ async def generate_answer(state: AgentState) -> dict:
         )
 
     answer = (response.content or "").strip()
+    usage_kwargs = usage_from_response(response)
+    # Fall back to the settings-level model id if the response didn't carry one.
+    usage_kwargs.setdefault("model", settings.LLM_MODEL_GENERATE)
     langfuse.update_current_generation(
         input=[
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_message},
         ],
         output=answer,
-        model=settings.LLM_MODEL_GENERATE,
         metadata={
             "context_score": state.get("context_score"),
             "iteration": int(state.get("iteration", 0)),
             "citations": len(citations),
             "documents": len(filenames),
         },
+        **usage_kwargs,
     )
     return {
         "final_answer": answer,

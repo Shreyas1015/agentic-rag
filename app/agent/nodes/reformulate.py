@@ -14,7 +14,7 @@ from langfuse import observe
 from app.agent.state import AgentState
 from app.core.config import settings
 from app.core.llm import extract_json, get_chat_model
-from app.observability.langfuse_client import langfuse
+from app.observability.langfuse_client import langfuse, usage_from_response
 
 log = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ Strategies:
 Reply ONLY with valid JSON: {"query": "<rewritten question>"}"""
 
 
-@observe(name="reformulate")
+@observe(name="reformulate", as_type="generation")
 async def reformulate_query(state: AgentState) -> dict:
     original = state.get("original_query") or state["query"]
     reason = state.get("context_reason") or "previous chunks were insufficient"
@@ -57,10 +57,18 @@ async def reformulate_query(state: AgentState) -> dict:
     except (ValueError, AttributeError) as exc:
         log.warning("reformulate: parse failed (%s); keeping prior query", exc)
 
-    langfuse.update_current_span(
-        input={"prior_query": state["query"], "reason": reason, "iteration": iteration - 1},
+    langfuse.update_current_generation(
+        input=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_message},
+        ],
         output={"new_query": new_query, "iteration": iteration},
-        metadata={"model": settings.LLM_MODEL_REFORMULATE, "max_iterations": settings.MAX_RETRIEVAL_ITERATIONS},
+        metadata={
+            "prior_query": state["query"],
+            "reason": reason,
+            "max_iterations": settings.MAX_RETRIEVAL_ITERATIONS,
+        },
+        **usage_from_response(response),
     )
     # multi_part: clear sub_questions so retrieve treats this as a single query
     return {

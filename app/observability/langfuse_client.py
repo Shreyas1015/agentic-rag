@@ -94,3 +94,38 @@ def flush() -> None:
         get_langfuse().flush()
     except Exception:
         log.exception("langfuse flush failed")
+
+
+def usage_from_response(response) -> dict:
+    """Pull usage + cost details out of a LangChain AIMessage in the shape
+    Langfuse's update_current_generation expects.
+
+    Returns a dict of kwargs to splat into update_current_generation:
+        {"model": ..., "usage_details": ..., "cost_details": ...}
+    Empty dict if the response carries no usage metadata (shouldn't happen
+    with OpenRouter — they pass it through — but be defensive).
+    """
+    out: dict = {}
+    md = getattr(response, "usage_metadata", None) or {}
+    if md:
+        out["usage_details"] = {
+            "input": int(md.get("input_tokens", 0)),
+            "output": int(md.get("output_tokens", 0)),
+            "total": int(
+                md.get(
+                    "total_tokens",
+                    md.get("input_tokens", 0) + md.get("output_tokens", 0),
+                )
+            ),
+        }
+    rm = getattr(response, "response_metadata", None) or {}
+    name = rm.get("model_name")
+    if name:
+        out["model"] = name
+    # OpenRouter returns the resolved upstream cost in token_usage.cost
+    # (USD float). Pass it as a single-bucket cost_details so Langfuse's
+    # cost dashboard sees the truth (not its own model-pricing estimate).
+    tu = rm.get("token_usage") or {}
+    if "cost" in tu and tu["cost"] is not None:
+        out["cost_details"] = {"total": float(tu["cost"])}
+    return out

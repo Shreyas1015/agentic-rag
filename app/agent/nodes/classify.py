@@ -16,7 +16,7 @@ from langfuse import observe
 from app.agent.state import AgentState, QueryType
 from app.core.config import settings
 from app.core.llm import extract_json, get_chat_model
-from app.observability.langfuse_client import langfuse
+from app.observability.langfuse_client import langfuse, usage_from_response
 
 log = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ SYSTEM_PROMPT = """You are a query router. Classify the user's question into exa
 Reply ONLY with valid JSON: {"query_type": "<one-of-the-three>"}"""
 
 
-@observe(name="classify")
+@observe(name="classify", as_type="generation")
 async def classify_query(state: AgentState) -> dict:
     query = state["query"]
     model = get_chat_model(
@@ -51,9 +51,9 @@ async def classify_query(state: AgentState) -> dict:
         log.warning("classify: invalid query_type %r; defaulting to simple_factual", qt)
         qt = "simple_factual"
 
-    langfuse.update_current_span(
-        input={"query": query},
+    langfuse.update_current_generation(
+        input=[{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": query}],
         output={"query_type": qt},
-        metadata={"model": settings.LLM_MODEL_CLASSIFY},
+        **usage_from_response(response),
     )
     return {"query_type": qt}

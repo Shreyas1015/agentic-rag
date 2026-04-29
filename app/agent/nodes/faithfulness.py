@@ -25,7 +25,7 @@ from langfuse import observe
 from app.agent.state import AgentState
 from app.core.config import settings
 from app.core.llm import extract_json, get_chat_model
-from app.observability.langfuse_client import langfuse
+from app.observability.langfuse_client import langfuse, usage_from_response
 
 log = logging.getLogger(__name__)
 
@@ -50,8 +50,8 @@ def _format_sources(parent_chunks: list[dict]) -> str:
     )
 
 
-async def _verify(answer: str, parent_chunks: list[dict]) -> tuple[float, list[str]]:
-    """Single Gemini Flash JSON call. Returns (score, unsupported_claims)."""
+async def _verify(answer: str, parent_chunks: list[dict]) -> tuple[float, list[str], Any]:
+    """Single Gemini Flash JSON call. Returns (score, unsupported_claims, raw_response)."""
     user_message = (
         f"ANSWER:\n{answer}\n\n"
         f"SOURCE CHUNKS:\n{_format_sources(parent_chunks)}"
@@ -71,14 +71,15 @@ async def _verify(answer: str, parent_chunks: list[dict]) -> tuple[float, list[s
         claims = [str(c).strip() for c in claims if str(c).strip()]
     except (ValueError, AttributeError, TypeError) as exc:
         log.warning("faithfulness: parse failed (%s); defaulting score=0", exc)
-        return 0.0, []
-    return max(0.0, min(1.0, score)), claims
+        return 0.0, [], response
+    return max(0.0, min(1.0, score)), claims, response
 
 
 async def _regenerate_with_constraints(
     state: AgentState, unsupported: list[str], filenames_hint: str
-) -> str:
-    """Re-run a non-streaming generation excluding the listed claims."""
+) -> tuple[str, Any]:
+    """Re-run a non-streaming generation excluding the listed claims.
+    Returns (answer_text, raw_response)."""
     from app.agent.nodes.generate import SYSTEM_PROMPT  # avoid circular import
 
     constraints = (
@@ -99,20 +100,49 @@ async def _regenerate_with_constraints(
             HumanMessage(content=user_message),
         ]
     )
-    return (response.content or "").strip()
+    return (response.content or "").strip(), response
 
 
-@observe(name="faithfulness")
+def _sum_usage(*responses) -> dict:
+    """Aggregate usage_details across multiple LLM responses (faithfulness can
+    fire up to 3 LLM calls — verify, regenerate, re-verify). Cost summed too."""
+    total = {"input": 0, "output": 0, "total": 0}
+    cost_total = 0.0
+    has_cost = False
+    last_model: str | None = None
+    for r in responses:
+        if r is None:
+            continue
+        u = usage_from_response(r)
+        d = u.get("usage_details") or {}
+        total["input"] += int(d.get("input", 0))
+        total["output"] += int(d.get("output", 0))
+        total["total"] += int(d.get("total", 0))
+        c = u.get("cost_details") or {}
+        if "total" in c:
+            cost_total += float(c["total"])
+            has_cost = True
+        if u.get("model"):
+            last_model = u["model"]
+    out: dict = {"usage_details": total}
+    if has_cost:
+        out["cost_details"] = {"total": cost_total}
+    if last_model:
+        out["model"] = last_model
+    return out
+
+
+@observe(name="faithfulness", as_type="generation")
 async def faithfulness_check(state: AgentState) -> dict:
     answer = state.get("final_answer") or ""
     parent_chunks = state.get("parent_chunks") or []
     if not answer or not parent_chunks:
-        langfuse.update_current_span(
+        langfuse.update_current_generation(
             output={"score": None}, metadata={"reason": "no answer or no chunks"}
         )
         return {"faithfulness_score": 0.0}
 
-    score, unsupported = await _verify(answer, parent_chunks)
+    score, unsupported, verify_resp = await _verify(answer, parent_chunks)
     update: dict[str, Any] = {"faithfulness_score": score}
 
     if score < THRESHOLD and unsupported:
@@ -133,24 +163,26 @@ async def faithfulness_check(state: AgentState) -> dict:
                 session, tenant_id=state["tenant_id"], document_ids=document_ids
             )
         sources_block = _format_context(parent_chunks, filenames)
-        new_answer = await _regenerate_with_constraints(
+        new_answer, regen_resp = await _regenerate_with_constraints(
             state, unsupported, sources_block
         )
         # Re-verify the regenerated answer (one more pass — helps observability,
         # we don't loop forever).
-        new_score, _ = await _verify(new_answer, parent_chunks)
+        new_score, _, reverify_resp = await _verify(new_answer, parent_chunks)
         update["final_answer"] = new_answer
         update["faithfulness_score"] = new_score
-        langfuse.update_current_span(
+        langfuse.update_current_generation(
             input={"answer_len": len(answer), "unsupported": len(unsupported)},
             output={"score_pre": score, "score_post": new_score, "regenerated": True},
             metadata={"threshold": THRESHOLD, "claims_dropped": unsupported[:5]},
+            **_sum_usage(verify_resp, regen_resp, reverify_resp),
         )
     else:
-        langfuse.update_current_span(
+        langfuse.update_current_generation(
             input={"answer_len": len(answer)},
             output={"score": score, "regenerated": False},
             metadata={"threshold": THRESHOLD, "passed": score >= THRESHOLD},
+            **_sum_usage(verify_resp),
         )
 
     return update

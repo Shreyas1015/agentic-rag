@@ -16,7 +16,7 @@ from langfuse import observe
 from app.agent.state import AgentState
 from app.core.config import settings
 from app.core.llm import extract_json, get_chat_model
-from app.observability.langfuse_client import langfuse
+from app.observability.langfuse_client import langfuse, usage_from_response
 
 log = logging.getLogger(__name__)
 
@@ -42,11 +42,11 @@ def _format_chunks(parent_chunks: list[dict]) -> str:
     )
 
 
-@observe(name="assess")
+@observe(name="assess", as_type="generation")
 async def assess_context(state: AgentState) -> dict:
     parent_chunks = state.get("parent_chunks") or []
     if not parent_chunks:
-        langfuse.update_current_span(
+        langfuse.update_current_generation(
             output={"score": 0.0}, metadata={"reason": "no parent chunks"}
         )
         return {"context_score": 0.0, "context_reason": "no parent chunks were retrieved"}
@@ -73,14 +73,18 @@ async def assess_context(state: AgentState) -> dict:
         log.warning("assess: parse failed (%s); defaulting score=0", exc)
 
     score = max(0.0, min(10.0, score))
-    langfuse.update_current_span(
-        input={"query": state["query"], "chunks": len(parent_chunks)},
+    langfuse.update_current_generation(
+        input=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_message},
+        ],
         output={"score": score, "reason": reason},
         metadata={
             "threshold": settings.CONTEXT_SCORE_THRESHOLD,
             "passes": score >= settings.CONTEXT_SCORE_THRESHOLD,
             "iteration": int(state.get("iteration", 0)),
-            "model": settings.LLM_MODEL_ASSESS,
+            "chunks": len(parent_chunks),
         },
+        **usage_from_response(response),
     )
     return {"context_score": score, "context_reason": reason}
