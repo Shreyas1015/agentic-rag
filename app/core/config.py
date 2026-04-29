@@ -28,8 +28,17 @@ class Settings(BaseSettings):
     LLM_MODEL_ASSESS: str = "google/gemini-2.5-flash"
     LLM_MODEL_REFORMULATE: str = "google/gemini-2.5-flash"
     LLM_MODEL_GENERATE: str = "openai/gpt-4o"
+    LLM_MODEL_LONG_CONTEXT: str = "google/gemini-2.5-pro"
     EMBEDDING_MODEL: str = "openai/text-embedding-3-small"
     EMBEDDING_DIMS: int = 1536
+
+    # ── Long-context bypass (Phase 3) ──────────────────────
+    # If the tenant's full active corpus fits within this many tokens, the
+    # agent skips RAG (retrieve / rerank / parent_fetch) and feeds the
+    # entire corpus to LLM_MODEL_LONG_CONTEXT alongside the question.
+    # Defaults to 800k — leaves headroom inside Gemini 2.5 Pro's 1M ctx for
+    # prompt + answer.
+    LONG_CONTEXT_BYPASS_TOKEN_BUDGET: int = 800_000
 
     # ── Auth (Logto) ───────────────────────────────────────
     LOGTO_ENDPOINT: str = ""           # public/advertised URL — DEFINES the issuer (`iss` claim)

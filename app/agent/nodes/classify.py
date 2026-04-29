@@ -16,6 +16,8 @@ from langfuse import observe
 from app.agent.state import AgentState, QueryType
 from app.core.config import settings
 from app.core.llm import extract_json, get_chat_model
+from app.db import crud
+from app.db.session import async_session_maker
 from app.observability.langfuse_client import langfuse, usage_from_response
 
 log = logging.getLogger(__name__)
@@ -51,9 +53,20 @@ async def classify_query(state: AgentState) -> dict:
         log.warning("classify: invalid query_type %r; defaulting to simple_factual", qt)
         qt = "simple_factual"
 
+    # Populate tenant_token_count so the next route can decide whether to
+    # take the long-context bypass path. Cheap (one COALESCE/SUM in PG).
+    async with async_session_maker() as session:
+        token_count = await crud.estimate_tenant_token_count(
+            session, tenant_id=state["tenant_id"]
+        )
+
     langfuse.update_current_generation(
         input=[{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": query}],
         output={"query_type": qt},
+        metadata={
+            "tenant_token_count": token_count,
+            "bypass_budget": settings.LONG_CONTEXT_BYPASS_TOKEN_BUDGET,
+        },
         **usage_from_response(response),
     )
-    return {"query_type": qt}
+    return {"query_type": qt, "tenant_token_count": token_count}

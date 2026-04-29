@@ -17,7 +17,7 @@ import hashlib
 import uuid
 from datetime import date
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Document, ParentChunk
@@ -126,6 +126,39 @@ async def fetch_parent_chunks(
         ParentChunk.tenant_id == tenant_id,
         ParentChunk.is_active.is_(True),
         ParentChunk.parent_id.in_(parent_ids),
+    )
+    return list((await session.execute(stmt)).scalars().all())
+
+
+async def estimate_tenant_token_count(
+    session: AsyncSession, *, tenant_id: str
+) -> int:
+    """Rough token estimate (~4 chars/token, English-ish) for ALL active
+    parent chunks belonging to a tenant. Used by the long-context-bypass
+    decision in the agent — if the whole corpus fits in `gemini-2.5-pro`'s
+    1M-token window we skip RAG and stuff everything into the prompt.
+    """
+    stmt = select(func.coalesce(func.sum(func.length(ParentChunk.text)), 0)).where(
+        ParentChunk.tenant_id == tenant_id,
+        ParentChunk.is_active.is_(True),
+    )
+    total_chars = (await session.execute(stmt)).scalar_one() or 0
+    return int(int(total_chars) / 4)
+
+
+async def fetch_all_active_parent_chunks(
+    session: AsyncSession, *, tenant_id: str
+) -> list[ParentChunk]:
+    """Return every active parent chunk for a tenant in deterministic order.
+    Used by the long-context-bypass node — it stuffs the lot into the
+    long-context model's prompt."""
+    stmt = (
+        select(ParentChunk)
+        .where(
+            ParentChunk.tenant_id == tenant_id,
+            ParentChunk.is_active.is_(True),
+        )
+        .order_by(ParentChunk.document_id, ParentChunk.chunk_index)
     )
     return list((await session.execute(stmt)).scalars().all())
 

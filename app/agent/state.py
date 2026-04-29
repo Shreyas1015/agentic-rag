@@ -29,6 +29,9 @@ class AgentState(TypedDict, total=False):
     # ── Loop control ────────────────────────────────
     iteration: int  # bumped by reformulate, capped at MAX_RETRIEVAL_ITERATIONS
 
+    # ── Routing hints populated before the first conditional edge ──
+    tenant_token_count: int  # rough total tokens in the tenant's active corpus
+
     # ── Retrieval ───────────────────────────────────
     retrieved_chunks: list[dict[str, Any]]  # children from Qdrant (RetrievedChunk dumps)
     parent_chunks: list[dict[str, Any]]  # 1024-token windows from PG
