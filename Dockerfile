@@ -45,6 +45,12 @@ COPY alembic.ini ./
 # uv's project tracking).
 RUN uv sync --frozen --no-dev
 
+# Pre-download the BGE reranker (~568 MB) at build time so the first cold
+# request doesn't pay the download. Lands in /root/.cache/huggingface,
+# which is also where the runtime VOLUME persists across container
+# restarts (declared below + named volume `model_cache` in compose).
+RUN uv run python -c "from transformers import AutoTokenizer, AutoModelForSequenceClassification; AutoTokenizer.from_pretrained('BAAI/bge-reranker-v2-m3'); AutoModelForSequenceClassification.from_pretrained('BAAI/bge-reranker-v2-m3')"
+
 # Persist HF / Docling model caches across container restarts via a named
 # volume mounted at /root/.cache (declared in docker-compose.yml).
 VOLUME ["/root/.cache"]

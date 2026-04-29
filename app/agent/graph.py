@@ -4,7 +4,10 @@
               ├─ simple_factual ───────────┤
               └─ procedural ───────────────┤
                                             ▼
-                                          retrieve
+                                          retrieve  (top-30 from Qdrant RRF)
+                                            │
+                                            ▼
+                                          rerank    (BGE local, top-30 → top-8)
                                             │
                                             ▼
                                         parent_fetch
@@ -35,6 +38,7 @@ from app.agent.nodes.decompose import decompose_question
 from app.agent.nodes.generate import generate_answer
 from app.agent.nodes.parent_fetch import parent_fetch
 from app.agent.nodes.reformulate import reformulate_query
+from app.agent.nodes.rerank import rerank
 from app.agent.nodes.retrieve import retrieve
 from app.agent.state import AgentState
 from app.core.config import settings
@@ -61,6 +65,7 @@ def build_graph():
     g.add_node("classify", classify_query)
     g.add_node("decompose", decompose_question)
     g.add_node("retrieve", retrieve)
+    g.add_node("rerank", rerank)
     g.add_node("parent_fetch", parent_fetch)
     g.add_node("assess", assess_context)
     g.add_node("reformulate", reformulate_query)
@@ -74,7 +79,8 @@ def build_graph():
         {"decompose": "decompose", "retrieve": "retrieve"},
     )
     g.add_edge("decompose", "retrieve")
-    g.add_edge("retrieve", "parent_fetch")
+    g.add_edge("retrieve", "rerank")
+    g.add_edge("rerank", "parent_fetch")
     g.add_edge("parent_fetch", "assess")
 
     g.add_conditional_edges(
