@@ -32,8 +32,11 @@ WORKDIR /app
 
 # Install dependencies first (better layer caching). uv reads .python-version
 # but we have UV_PYTHON_DOWNLOADS=never so it must use the system Python 3.12.
+# BuildKit cache mount keeps uv's download cache between builds — first build
+# pulls from PyPI, subsequent builds reuse the local cache.
 COPY pyproject.toml uv.lock .python-version ./
-RUN uv sync --frozen --no-dev --no-install-project
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --no-install-project
 
 # Copy app source.
 COPY app ./app
@@ -41,15 +44,11 @@ COPY scripts ./scripts
 COPY migrations ./migrations
 COPY alembic.ini ./
 
-# Now install the project itself (no-op for our flat layout, but completes
-# uv's project tracking).
-RUN uv sync --frozen --no-dev
-
-# Pre-download the BGE reranker (~568 MB) at build time so the first cold
-# request doesn't pay the download. Lands in /root/.cache/huggingface,
-# which is also where the runtime VOLUME persists across container
-# restarts (declared below + named volume `model_cache` in compose).
-RUN uv run python -c "from transformers import AutoTokenizer, AutoModelForSequenceClassification; AutoTokenizer.from_pretrained('BAAI/bge-reranker-v2-m3'); AutoModelForSequenceClassification.from_pretrained('BAAI/bge-reranker-v2-m3')"
+# NOTE: We deliberately do NOT pre-download the BGE reranker at build time.
+# /root/.cache is mounted as a named volume (`model_cache`) in compose, and the
+# volume's content masks the image's content on container start — meaning any
+# build-time download here gets shadowed at runtime. The model downloads on
+# first request and persists in the volume across rebuilds.
 
 # Persist HF / Docling model caches across container restarts via a named
 # volume mounted at /root/.cache (declared in docker-compose.yml).

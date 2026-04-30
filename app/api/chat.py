@@ -39,16 +39,24 @@ log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
-# Friendly status messages emitted as the graph progresses.
+# Friendly status messages emitted as the graph progresses. Every node that
+# can produce final state (final_answer/citations) MUST be listed here —
+# the loop below only collects state updates for nodes in this map.
 _NODE_MESSAGES: dict[str, str] = {
     "classify": "Classifying query...",
+    "chat_smalltalk": "Replying...",
+    "bypass": "Reading documents directly...",
     "decompose": "Decomposing into sub-questions...",
     "retrieve": "Searching documents...",
     "parent_fetch": "Fetching context...",
     "assess": "Assessing context quality...",
     "reformulate": "Reformulating query...",
     "generate": "Generating answer...",
+    "faithfulness": "Verifying answer...",
 }
+
+# Nodes whose LLM token stream should be forwarded to the client live.
+_STREAMING_NODES: frozenset[str] = frozenset({"generate", "bypass", "chat_smalltalk"})
 
 
 class ChatRequest(BaseModel):
@@ -86,7 +94,7 @@ async def _stream_agent(
     }
 
     final_state: dict[str, Any] = {}
-    in_generate = False  # token events only fire while the generate node is active
+    in_streaming_node = False  # token events fire while a node in _STREAMING_NODES is active
 
     # Root span — every @observe inside the graph becomes a child, sharing
     # one trace_id we surface in the `done` event so /feedback can target it.
@@ -103,21 +111,21 @@ async def _stream_agent(
                 name = ev.get("name", "")
 
                 if kind == "on_chain_start" and name in _NODE_MESSAGES:
-                    if name == "generate":
-                        in_generate = True
+                    if name in _STREAMING_NODES:
+                        in_streaming_node = True
                     yield _sse(
                         "status", {"node": name, "message": _NODE_MESSAGES[name]}
                     )
 
                 elif kind == "on_chain_end" and name in _NODE_MESSAGES:
-                    if name == "generate":
-                        in_generate = False
+                    if name in _STREAMING_NODES:
+                        in_streaming_node = False
                     # Each node returns a partial state update — accumulate.
                     update = (ev.get("data") or {}).get("output")
                     if isinstance(update, dict):
                         final_state.update(update)
 
-                elif kind == "on_chat_model_stream" and in_generate:
+                elif kind == "on_chat_model_stream" and in_streaming_node:
                     chunk = (ev.get("data") or {}).get("chunk")
                     text = getattr(chunk, "content", "") if chunk is not None else ""
                     if text:

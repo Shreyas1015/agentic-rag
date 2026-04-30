@@ -85,6 +85,10 @@ class Settings(BaseSettings):
     # the bundled tesseract from the image so no download is needed).
     DOCLING_OCR_ENABLED: bool = False
 
+    # ── CORS (frontend origins) ────────────────────────────
+    # Comma-separated list of allowed origins for the browser.
+    FRONTEND_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000"
+
     # ── Langfuse (Phase 2) ─────────────────────────────────
     # When unset, tracing is disabled (every @observe becomes a no-op).
     # In Docker, compose overrides LANGFUSE_HOST to http://langfuse-web:3000.

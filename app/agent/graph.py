@@ -47,6 +47,7 @@ from langgraph.graph import END, StateGraph
 
 from app.agent.nodes.assess import assess_context
 from app.agent.nodes.bypass import bypass_generate
+from app.agent.nodes.chat_smalltalk import chat_smalltalk
 from app.agent.nodes.classify import classify_query
 from app.agent.nodes.decompose import decompose_question
 from app.agent.nodes.faithfulness import faithfulness_check
@@ -60,13 +61,20 @@ from app.core.config import settings
 
 
 def _route_after_classify(state: AgentState) -> str:
-    """Route from classify into one of three lanes:
+    """Route from classify into one of four lanes:
 
-    - bypass    : tenant's full corpus fits in the long-context budget;
-                  skip RAG entirely and stuff everything in the prompt.
-    - decompose : compound query; split into sub-questions before retrieve.
-    - retrieve  : default RAG path.
+    - chat_smalltalk : greeting / thanks / meta-question about the assistant.
+                       Skip retrieval and faithfulness, return immediately.
+    - bypass         : tenant's full corpus fits in the long-context budget;
+                       skip RAG and stuff everything in the prompt.
+    - decompose      : compound query; split into sub-questions before retrieve.
+    - retrieve       : default RAG path.
+
+    Conversational beats bypass — small-talk shouldn't pay the bypass cost
+    even if the corpus is tiny.
     """
+    if state.get("query_type") == "conversational":
+        return "chat_smalltalk"
     token_count = int(state.get("tenant_token_count") or 0)
     if 0 < token_count < settings.LONG_CONTEXT_BYPASS_TOKEN_BUDGET:
         return "bypass"
@@ -88,6 +96,7 @@ def build_graph():
     g = StateGraph(AgentState)
 
     g.add_node("classify", classify_query)
+    g.add_node("chat_smalltalk", chat_smalltalk)
     g.add_node("bypass", bypass_generate)
     g.add_node("decompose", decompose_question)
     g.add_node("retrieve", retrieve)
@@ -104,14 +113,20 @@ def build_graph():
         "classify",
         _route_after_classify,
         {
+            "chat_smalltalk": "chat_smalltalk",
             "bypass": "bypass",
             "decompose": "decompose",
             "retrieve": "retrieve",
         },
     )
-    # Bypass already produced final_answer + citations; faithfulness still
-    # runs as a defensive verifier.
-    g.add_edge("bypass", "faithfulness")
+    # Small-talk doesn't ground in documents — skip faithfulness, exit clean.
+    g.add_edge("chat_smalltalk", END)
+    # Bypass fed the ENTIRE corpus to the long-context model and instructed
+    # it to ground claims to the corpus. A second LLM call to re-verify the
+    # answer against the same chunks added ~2s (~14% of total latency) for
+    # marginal safety value. Faithfulness still runs on the RAG path, where
+    # retrieval can genuinely miss context.
+    g.add_edge("bypass", END)
     g.add_edge("decompose", "retrieve")
     g.add_edge("retrieve", "rerank")
     g.add_edge("rerank", "parent_fetch")

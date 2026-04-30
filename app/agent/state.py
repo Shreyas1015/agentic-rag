@@ -12,7 +12,7 @@ from typing import Annotated, Any, Literal, TypedDict
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
 
-QueryType = Literal["simple_factual", "multi_part", "procedural"]
+QueryType = Literal["conversational", "simple_factual", "multi_part", "procedural"]
 
 
 class AgentState(TypedDict, total=False):

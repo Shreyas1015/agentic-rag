@@ -22,15 +22,47 @@ from app.observability.langfuse_client import langfuse, usage_from_response
 
 log = logging.getLogger(__name__)
 
-_VALID: set[QueryType] = {"simple_factual", "multi_part", "procedural"}
+_VALID: set[QueryType] = {"conversational", "simple_factual", "multi_part", "procedural"}
 
-SYSTEM_PROMPT = """You are a query router. Classify the user's question into exactly one of three categories:
+SYSTEM_PROMPT = """You are a query router for a document-QA assistant. Classify the user's input into exactly one of four categories.
 
-- "simple_factual": a single-fact lookup. Examples: "What is the TED score?", "Who wrote Docling?"
-- "multi_part": a compound/comparison/multi-entity question that benefits from being split. Examples: "Compare BERT and GPT.", "What are the differences between A, B, and C?"
-- "procedural": a how-to or step-by-step question. Examples: "How do I run inference?", "Steps to set up the environment?"
+Categories:
+- "conversational": greetings, thanks, small-talk, or meta-questions about the assistant itself. The user is NOT asking about the corpus. Cheap to answer with no retrieval.
+- "simple_factual": a single-fact lookup against the corpus.
+- "multi_part": a compound / comparison / multi-entity question that benefits from being split into sub-questions before retrieval.
+- "procedural": a how-to or step-by-step question against the corpus.
 
-Reply ONLY with valid JSON: {"query_type": "<one-of-the-three>"}"""
+Examples:
+Input: "hello"
+Output: {"query_type": "conversational"}
+
+Input: "thanks!"
+Output: {"query_type": "conversational"}
+
+Input: "what can you do?"
+Output: {"query_type": "conversational"}
+
+Input: "What is the TED score?"
+Output: {"query_type": "simple_factual"}
+
+Input: "Who wrote Docling?"
+Output: {"query_type": "simple_factual"}
+
+Input: "Compare BERT and GPT-4 across latency and quality."
+Output: {"query_type": "multi_part"}
+
+Input: "What are the differences between dense, sparse, and hybrid retrieval?"
+Output: {"query_type": "multi_part"}
+
+Input: "How do I run inference?"
+Output: {"query_type": "procedural"}
+
+Input: "Steps to set up the environment?"
+Output: {"query_type": "procedural"}
+
+Tie-breaker rule: if the input could plausibly be either conversational or a real question about the corpus, pick the corpus category (simple_factual / multi_part / procedural). Misclassifying a real question as conversational hides information from the user. Misclassifying small-talk as a real question only wastes a few tokens.
+
+Reply ONLY with valid JSON: {"query_type": "<one-of-the-four>"}"""
 
 
 @observe(name="classify", as_type="generation")

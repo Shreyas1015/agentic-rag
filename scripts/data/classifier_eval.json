@@ -1,0 +1,38 @@
+{
+  "_comment": "30-item eval set for the classify node. Covers all four query types plus boundary cases. Edit `expected` if you intentionally change classifier behaviour.",
+  "items": [
+    {"query": "hello", "expected": "conversational"},
+    {"query": "hi there", "expected": "conversational"},
+    {"query": "thanks!", "expected": "conversational"},
+    {"query": "thank you", "expected": "conversational"},
+    {"query": "good morning", "expected": "conversational"},
+    {"query": "how are you?", "expected": "conversational"},
+    {"query": "what can you do?", "expected": "conversational"},
+    {"query": "who are you?", "expected": "conversational"},
+    {"query": "are you an AI?", "expected": "conversational"},
+    {"query": "bye", "expected": "conversational"},
+
+    {"query": "What is the TED score?", "expected": "simple_factual"},
+    {"query": "Who wrote the Docling paper?", "expected": "simple_factual"},
+    {"query": "What is the embedding dimension we use?", "expected": "simple_factual"},
+    {"query": "When was the chunking strategy last updated?", "expected": "simple_factual"},
+    {"query": "What model does the rerank node call?", "expected": "simple_factual"},
+    {"query": "How many tokens per parent chunk?", "expected": "simple_factual"},
+    {"query": "What is the default cosine threshold for the semantic cache?", "expected": "simple_factual"},
+
+    {"query": "Compare BERT and GPT-4 on retrieval quality and latency.", "expected": "multi_part"},
+    {"query": "What are the differences between dense, sparse, and hybrid retrieval?", "expected": "multi_part"},
+    {"query": "Summarise the indemnity terms across the three vendor MSAs and flag any mismatched cap of liability.", "expected": "multi_part"},
+    {"query": "How do BM25 and dense embeddings compare for technical documents versus legal contracts?", "expected": "multi_part"},
+    {"query": "What are the pros and cons of using Qdrant vs pgvector for our use case?", "expected": "multi_part"},
+    {"query": "Compare the ingestion latency of OCR-on vs OCR-off across PDF, DOCX, and HTML.", "expected": "multi_part"},
+    {"query": "What were the changes to the auth, billing, and storage modules between v1 and v2?", "expected": "multi_part"},
+
+    {"query": "How do I run inference on a new tenant?", "expected": "procedural"},
+    {"query": "Steps to set up the development environment from scratch.", "expected": "procedural"},
+    {"query": "How can I add a new ingestion pipeline for video transcripts?", "expected": "procedural"},
+    {"query": "Walk me through deploying a new release to production.", "expected": "procedural"},
+    {"query": "How do I rotate the OpenRouter API key without downtime?", "expected": "procedural"},
+    {"query": "Show me how to onboard a new tenant end-to-end.", "expected": "procedural"}
+  ]
+}

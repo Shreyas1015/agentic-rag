@@ -1,0 +1,102 @@
+{
+  "_comment": "End-to-end retrieval+answer eval set for tenant s1gpeu5ksyeb. UPDATE the `query`, `expected_answer` substring, `expected_filenames`, and `expected_pages` to match what's actually in your ingested PDFs — the values below are placeholders based on plausible content of a software-engineer resume + a backend multi-tenant implementation timeline. The eval is deterministic (no LLM judge): citation_recall measures whether expected filename+page pairs appear in citations; answer_contains measures whether the canonical phrase is a substring of the answer (case-insensitive). Negative items have expected_answer=null and check that the model refuses with the canonical 'documents don't contain enough information' string.",
+  "items": [
+    {
+      "id": "resume-name",
+      "query": "What is the candidate's name on the software engineer resume?",
+      "expected_answer": "Shreyas Gurav",
+      "expected_filenames": ["Software_Engineer_Shreyas_Gurav__.pdf"],
+      "expected_pages": [1]
+    },
+    {
+      "id": "resume-role",
+      "query": "What role is the candidate applying for?",
+      "expected_answer": "Software Engineer",
+      "expected_filenames": ["Software_Engineer_Shreyas_Gurav__.pdf"],
+      "expected_pages": [1]
+    },
+    {
+      "id": "resume-skills",
+      "query": "What programming languages does the candidate know?",
+      "expected_answer": "Python",
+      "expected_filenames": ["Software_Engineer_Shreyas_Gurav__.pdf"],
+      "expected_pages": [1, 2]
+    },
+    {
+      "id": "resume-education",
+      "query": "Where did the candidate study?",
+      "expected_answer": "",
+      "expected_filenames": ["Software_Engineer_Shreyas_Gurav__.pdf"],
+      "expected_pages": [1, 2]
+    },
+    {
+      "id": "backend-window",
+      "query": "What is the date range of the backend multi-tenant implementation?",
+      "expected_answer": "February 17",
+      "expected_filenames": ["Backend Multi-Tenant Implementation _ February 17 – March 10 (21 Days).pdf"],
+      "expected_pages": [1]
+    },
+    {
+      "id": "backend-duration",
+      "query": "How many days is the backend multi-tenant implementation planned to take?",
+      "expected_answer": "21",
+      "expected_filenames": ["Backend Multi-Tenant Implementation _ February 17 – March 10 (21 Days).pdf"],
+      "expected_pages": [1]
+    },
+    {
+      "id": "backend-tenant",
+      "query": "How does the backend handle tenant isolation?",
+      "expected_answer": "tenant",
+      "expected_filenames": ["Backend Multi-Tenant Implementation _ February 17 – March 10 (21 Days).pdf"],
+      "expected_pages": [1, 2, 3, 4]
+    },
+    {
+      "id": "backend-database",
+      "query": "What database is used in the backend implementation?",
+      "expected_answer": "Postgres",
+      "expected_filenames": ["Backend Multi-Tenant Implementation _ February 17 – March 10 (21 Days).pdf"],
+      "expected_pages": [1, 2, 3, 4]
+    },
+    {
+      "id": "multi-doc-overview",
+      "query": "Summarise the two documents I have uploaded.",
+      "expected_answer": "",
+      "expected_filenames": [
+        "Software_Engineer_Shreyas_Gurav__.pdf",
+        "Backend Multi-Tenant Implementation _ February 17 – March 10 (21 Days).pdf"
+      ],
+      "expected_pages": [1]
+    },
+    {
+      "id": "multi-doc-cross",
+      "query": "Compare the candidate's skills against the technologies mentioned in the backend implementation plan.",
+      "expected_answer": "",
+      "expected_filenames": [
+        "Software_Engineer_Shreyas_Gurav__.pdf",
+        "Backend Multi-Tenant Implementation _ February 17 – March 10 (21 Days).pdf"
+      ],
+      "expected_pages": [1]
+    },
+    {
+      "id": "negative-unrelated",
+      "query": "What is the population of Mongolia in 2023?",
+      "expected_answer": null,
+      "expected_filenames": [],
+      "expected_pages": []
+    },
+    {
+      "id": "negative-fact-not-in-corpus",
+      "query": "What is the candidate's annual salary?",
+      "expected_answer": null,
+      "expected_filenames": [],
+      "expected_pages": []
+    },
+    {
+      "id": "negative-out-of-domain",
+      "query": "How do I bake sourdough bread?",
+      "expected_answer": null,
+      "expected_filenames": [],
+      "expected_pages": []
+    }
+  ]
+}
