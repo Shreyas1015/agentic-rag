@@ -15,13 +15,13 @@ One-page Dokploy UI walkthrough. Full reference + troubleshooting in [DEPLOY.md]
 
 1. **Create Application** → **Docker Compose**.
 2. **Source** → GitHub → repo `Shreyas1015/agentic-rag`, branch `main`.
-3. **Compose file:** `server/docker-compose.yml`
-   **Compose override:** `server/docker-compose.prod.yml`
+3. **Compose file:** `docker-compose.yml`
+   **Compose override:** `docker-compose.prod.yml`
 4. **Environment** tab → paste the env block from [DEPLOY.md §3.3](./DEPLOY.md#33-production-env). Fill every `<...>`. Save.
 5. **Domains** tab → add five rows (Let's Encrypt on each):
 
    | Domain                   | Service        | Port |
-   |--------------------------|----------------|------|
+   | ------------------------ | -------------- | ---- |
    | `api.example.com`        | `api`          | 8000 |
    | `auth.example.com`       | `logto`        | 3001 |
    | `auth-admin.example.com` | `logto`        | 3002 |

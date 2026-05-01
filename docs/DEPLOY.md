@@ -4,16 +4,16 @@ Runbook for deploying agentic-rag to a Dokploy-managed EC2 host. Same `docker-co
 
 ## 1. Prod architecture
 
-| Component        | Where it lives                                            | Why                                                                  |
-|------------------|-----------------------------------------------------------|----------------------------------------------------------------------|
-| Postgres         | **AWS RDS** (single instance, three databases)            | Managed backups, no container disk pressure, durable across redeploys|
-| Qdrant           | container, persistent volume                              | Tenant collections — small enough to live with the app               |
-| Redis            | container                                                 | Celery broker + semantic cache — ephemeral by design                 |
-| MinIO            | container, persistent volume (or swap to AWS S3 via env)  | PDF object storage; presigned URLs for browser preview               |
-| ClickHouse       | container, persistent volume                              | Required by Langfuse for trace storage                               |
-| Logto            | container, talks to RDS `logto` DB                        | OIDC + admin console                                                 |
-| Langfuse web/worker | containers, talk to RDS `langfuse` DB + ClickHouse + MinIO | Trace UI + ingest worker                                          |
-| Traefik          | managed by Dokploy on the host                            | TLS + subdomain routing — no service binds host ports                |
+| Component           | Where it lives                                             | Why                                                                   |
+| ------------------- | ---------------------------------------------------------- | --------------------------------------------------------------------- |
+| Postgres            | **AWS RDS** (single instance, three databases)             | Managed backups, no container disk pressure, durable across redeploys |
+| Qdrant              | container, persistent volume                               | Tenant collections — small enough to live with the app                |
+| Redis               | container                                                  | Celery broker + semantic cache — ephemeral by design                  |
+| MinIO               | container, persistent volume (or swap to AWS S3 via env)   | PDF object storage; presigned URLs for browser preview                |
+| ClickHouse          | container, persistent volume                               | Required by Langfuse for trace storage                                |
+| Logto               | container, talks to RDS `logto` DB                         | OIDC + admin console                                                  |
+| Langfuse web/worker | containers, talk to RDS `langfuse` DB + ClickHouse + MinIO | Trace UI + ingest worker                                              |
+| Traefik             | managed by Dokploy on the host                             | TLS + subdomain routing — no service binds host ports                 |
 
 The three RDS databases (`agentic_rag`, `logto`, `langfuse`) live on one Postgres instance. RDS user must have `CREATE ROLE` (Logto creates its own roles at startup — Neon is incompatible because of this).
 
@@ -21,11 +21,11 @@ The three RDS databases (`agentic_rag`, `logto`, `langfuse`) live on one Postgre
 
 - EC2 host with Dokploy installed. Security group must allow `22`, `80`, `443`, and `3000` (Dokploy admin UI).
 - Five subdomains pointing at the host:
-  - `api.example.com`         → FastAPI
-  - `auth.example.com`        → Logto OIDC
-  - `auth-admin.example.com`  → Logto admin console
-  - `traces.example.com`      → Langfuse UI
-  - `files.example.com`       → MinIO (browser fetches presigned PDF URLs)
+  - `api.example.com` → FastAPI
+  - `auth.example.com` → Logto OIDC
+  - `auth-admin.example.com` → Logto admin console
+  - `traces.example.com` → Langfuse UI
+  - `files.example.com` → MinIO (browser fetches presigned PDF URLs)
 - An RDS Postgres instance reachable from the host. Three databases pre-created: `agentic_rag`, `logto`, `langfuse`. The DB user must have `CREATE ROLE`.
 - An OpenRouter API key with budget for production traffic.
 - ~12 GB RAM free, ~10 GB disk for `qdrant` + `clickhouse` + `minio` + `uploads_data` + HF model cache.
@@ -55,13 +55,13 @@ Save the output in your password manager — Dokploy needs all of it in step 3.3
 In Dokploy → **Create Application** → **Docker Compose**:
 
 - **Source:** GitHub → `Shreyas1015/agentic-rag`, branch `main`
-- **Compose file:** `server/docker-compose.yml`
-- **Compose override:** `server/docker-compose.prod.yml`
+- **Compose file:** `docker-compose.yml`
+- **Compose override:** `docker-compose.prod.yml`
 
-Equivalent to running:
+Equivalent to running (from the repo root):
 
 ```
-docker compose -f server/docker-compose.yml -f server/docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 ```
 
 ### 3.3 Production env
@@ -160,13 +160,13 @@ DOCLING_OCR_ENABLED=true
 
 In the Dokploy app's **Domains** tab — one row per service. Dokploy injects the corresponding Traefik labels.
 
-| Domain                       | Service        | Container port |
-|------------------------------|----------------|----------------|
-| `api.example.com`            | `api`          | `8000`         |
-| `auth.example.com`           | `logto`        | `3001`         |
-| `auth-admin.example.com`     | `logto`        | `3002`         |
-| `traces.example.com`         | `langfuse-web` | `3000`         |
-| `files.example.com`          | `minio`        | `9000`         |
+| Domain                   | Service        | Container port |
+| ------------------------ | -------------- | -------------- |
+| `api.example.com`        | `api`          | `8000`         |
+| `auth.example.com`       | `logto`        | `3001`         |
+| `auth-admin.example.com` | `logto`        | `3002`         |
+| `traces.example.com`     | `langfuse-web` | `3000`         |
+| `files.example.com`      | `minio`        | `9000`         |
 
 Enable Let's Encrypt on each. Trigger the deploy. Watch logs — `migrate` runs `alembic upgrade head` against RDS once and exits 0.
 
@@ -193,7 +193,7 @@ Open `https://auth-admin.example.com` and create the admin account, then in the 
 Tenant rows still need to be seeded. Qdrant collections are created lazily on first ingest now (see `qdrant_client.ensure_tenant_collection`), so the explicit `create_collections.py` step is optional.
 
 ```bash
-docker compose -f server/docker-compose.yml -f server/docker-compose.prod.yml \
+docker compose -f docker-compose.yml -f docker-compose.prod.yml \
   exec api uv run python scripts/seed_tenant.py \
   --logto-org-id <ORG_ID> --name "<Tenant display name>"
 ```
@@ -204,7 +204,7 @@ Open `https://traces.example.com`. Sign in with `LANGFUSE_INIT_USER_EMAIL` + `LA
 
 ### 4.4 MinIO console (optional)
 
-The MinIO container exposes its admin console at `:9001` *internally*. To inspect uploads, either map a sixth subdomain (`storage.example.com → minio:9001`) or `docker exec` into the container.
+The MinIO container exposes its admin console at `:9001` _internally_. To inspect uploads, either map a sixth subdomain (`storage.example.com → minio:9001`) or `docker exec` into the container.
 
 ## 5. Smoke test
 
@@ -241,7 +241,7 @@ Standard flow: `git push origin main` → Dokploy auto-deploys. To roll back:
 # On the Dokploy server:
 git fetch --tags
 git checkout <tag-or-sha>
-docker compose -f server/docker-compose.yml -f server/docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 ```
 
 Migrations are forward-only — if you roll back across a schema change, run `alembic downgrade` against RDS first or restore RDS from a snapshot.
@@ -250,23 +250,23 @@ Migrations are forward-only — if you roll back across a schema change, run `al
 
 ```bash
 # Tail logs
-docker compose -f server/docker-compose.yml -f server/docker-compose.prod.yml logs -f api worker
+docker compose -f docker-compose.yml -f docker-compose.prod.yml logs -f api worker
 
 # Restart after env change (compose `restart` does NOT re-read .env — must use `up -d`)
-docker compose -f server/docker-compose.yml -f server/docker-compose.prod.yml up -d --force-recreate api worker
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --force-recreate api worker
 
 # Re-run migrations after a schema PR
-docker compose -f server/docker-compose.yml -f server/docker-compose.prod.yml run --rm migrate
+docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm migrate
 
 # Read-only Postgres shell (RDS)
 psql "postgresql://<user>:<pw>@<rds-host>:5432/agentic_rag?sslmode=require"
 
 # Flush semantic cache (after threshold change)
-docker compose -f server/docker-compose.yml -f server/docker-compose.prod.yml exec redis \
+docker compose -f docker-compose.yml -f docker-compose.prod.yml exec redis \
   redis-cli -n 2 FLUSHDB
 
 # Recreate a tenant's Qdrant collection (e.g. after embedding model change)
-docker compose -f server/docker-compose.yml -f server/docker-compose.prod.yml \
+docker compose -f docker-compose.yml -f docker-compose.prod.yml \
   exec api uv run python scripts/create_collections.py --tenant-id <ORG_ID> --recreate
 ```
 
@@ -281,17 +281,17 @@ The S3 client is endpoint-agnostic. To switch:
 
 ## 9. Troubleshooting
 
-| Symptom | Likely cause |
-|---|---|
-| `docker compose config` errors with `<VAR> must be set in prod` | A required secret is missing in Dokploy env. Re-check section 3.3. |
-| Deploy fails: `password authentication failed for user "postgres"` | RDS connection string wrong — double check `DATABASE_URL`, `LOGTO_DB_URL`, `LANGFUSE_DATABASE_URL`. All three must be reachable. |
-| Logto crashloops with `permission denied to create role` | RDS user lacks `CREATE ROLE`. Grant it (or use the master user). |
-| Logto / Langfuse can't reach RDS but psql from host works | Containerized Node `pg` doesn't trust the AWS RDS CA bundle. The base compose sets `NODE_TLS_REJECT_UNAUTHORIZED=0` on those services — verify it survived your overlay edits. |
-| `/chat/stream` returns 401 | Logto access token expired (1h TTL) or `aud` mismatch. `LOGTO_RESOURCE` must equal the API resource Identifier in Logto admin. |
-| `/chat/stream` returns 403 | Token has no `organization_id` claim. Add the M2M app to the org's "Machine-to-machine apps" (4.1 step 5). |
-| Langfuse traces don't appear | `LANGFUSE_PUBLIC_KEY` / `SECRET_KEY` mismatch between api/worker env and `LANGFUSE_INIT_PROJECT_*`. They must be identical. |
-| Logto admin console redirect loop | `LOGTO_ENDPOINT` / `LOGTO_ADMIN_ENDPOINT` don't match the actual public URLs (Traefik domains). |
-| `/documents/{id}/url` returns a URL the browser can't open | `S3_PUBLIC_URL` not Traefik-routed. Confirm the `files.<domain>` row in 3.4 and that DNS is live. |
-| Worker crashloops with `Event loop is closed` | Stale connection in the SQLAlchemy pool from a prior worker process. Restart worker; pool gets disposed in the new process. |
-| `/ingest` succeeds but status stays pending forever | Worker isn't running. `docker compose ps` should show `agentic-rag-worker` Up. |
-| Ingestion crashes in OCR | Set `DOCLING_OCR_ENABLED=false` if you don't need scanned-PDF support. RapidOCR's first-use model download sometimes fails behind firewalls; bundled `tesseract-ocr` is the fallback. |
+| Symptom                                                            | Likely cause                                                                                                                                                                          |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `docker compose config` errors with `<VAR> must be set in prod`    | A required secret is missing in Dokploy env. Re-check section 3.3.                                                                                                                    |
+| Deploy fails: `password authentication failed for user "postgres"` | RDS connection string wrong — double check `DATABASE_URL`, `LOGTO_DB_URL`, `LANGFUSE_DATABASE_URL`. All three must be reachable.                                                      |
+| Logto crashloops with `permission denied to create role`           | RDS user lacks `CREATE ROLE`. Grant it (or use the master user).                                                                                                                      |
+| Logto / Langfuse can't reach RDS but psql from host works          | Containerized Node `pg` doesn't trust the AWS RDS CA bundle. The base compose sets `NODE_TLS_REJECT_UNAUTHORIZED=0` on those services — verify it survived your overlay edits.        |
+| `/chat/stream` returns 401                                         | Logto access token expired (1h TTL) or `aud` mismatch. `LOGTO_RESOURCE` must equal the API resource Identifier in Logto admin.                                                        |
+| `/chat/stream` returns 403                                         | Token has no `organization_id` claim. Add the M2M app to the org's "Machine-to-machine apps" (4.1 step 5).                                                                            |
+| Langfuse traces don't appear                                       | `LANGFUSE_PUBLIC_KEY` / `SECRET_KEY` mismatch between api/worker env and `LANGFUSE_INIT_PROJECT_*`. They must be identical.                                                           |
+| Logto admin console redirect loop                                  | `LOGTO_ENDPOINT` / `LOGTO_ADMIN_ENDPOINT` don't match the actual public URLs (Traefik domains).                                                                                       |
+| `/documents/{id}/url` returns a URL the browser can't open         | `S3_PUBLIC_URL` not Traefik-routed. Confirm the `files.<domain>` row in 3.4 and that DNS is live.                                                                                     |
+| Worker crashloops with `Event loop is closed`                      | Stale connection in the SQLAlchemy pool from a prior worker process. Restart worker; pool gets disposed in the new process.                                                           |
+| `/ingest` succeeds but status stays pending forever                | Worker isn't running. `docker compose ps` should show `agentic-rag-worker` Up.                                                                                                        |
+| Ingestion crashes in OCR                                           | Set `DOCLING_OCR_ENABLED=false` if you don't need scanned-PDF support. RapidOCR's first-use model download sometimes fails behind firewalls; bundled `tesseract-ocr` is the fallback. |
