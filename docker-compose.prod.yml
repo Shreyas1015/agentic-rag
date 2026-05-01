@@ -1,8 +1,7 @@
 name: agentic-rag
 
-# Production overlay. Apply with:
-#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-# (Dokploy can take both files via its compose-template UI.)
+# Self-contained production compose. Apply standalone:
+#   docker compose -f docker-compose.prod.yml up -d --build
 #
 # Architecture in prod:
 #   - Postgres lives on AWS RDS (no container — DATABASE_URL points at it).
@@ -10,109 +9,310 @@ name: agentic-rag
 #   - Object storage (PDF previews) lives in MinIO inside the stack OR a
 #     real AWS S3 bucket — code is identical, env vars decide.
 #   - Traefik (managed by Dokploy) terminates TLS and routes by Host header.
-#     Nothing in this compose binds to a host port — Dokploy injects
-#     Traefik labels per service when you map a domain in its UI.
+#     No service binds host ports — Dokploy injects Traefik labels per
+#     service when you map a domain in its UI.
 #
-# What this overlay changes vs the base dev compose:
+# Differences vs docker-compose.yml (dev):
 #   - `restart: always` on every long-running service.
-#   - All host port mappings stripped (`ports: !reset []`). The base file
-#     only exposes ports for local dev; prod traffic comes through Traefik.
-#   - `data/uploads` becomes a named volume so user files survive redeploys
-#     without depending on a bind path on the EC2 host.
-#   - All Logto / Langfuse / S3 secrets are MANDATORY (`${VAR:?...}`) so
-#     `docker compose config` fails loudly if a required secret is unset.
-#   - Public URLs (LOGTO_ENDPOINT, LANGFUSE_NEXTAUTH_URL, S3_PUBLIC_URL)
-#     come from env — never localhost defaults.
+#   - Zero host port mappings (Traefik routes to internal container ports).
+#   - api/worker run from the baked image (no source bind mounts, no --reload).
+#   - data/uploads is a named volume (uploads_data) so user files survive
+#     redeploys without depending on a host bind path.
+#   - Logto / Langfuse / S3 secrets are MANDATORY (`${VAR:?...}`) so
+#     `docker compose config` fails loudly if any secret is unset.
 
 services:
 
+  # ── Redis (triple-role: Celery broker / result / semantic cache) ──
   redis:
+    image: redis:7-alpine
+    container_name: agentic-rag-redis
     restart: always
-    ports: !reset []      # internal — workers reach redis:6379
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - ragnet
 
+  # ── Qdrant (collection-per-tenant, hybrid dense+BM25) ──
   qdrant:
+    image: qdrant/qdrant:latest
+    container_name: agentic-rag-qdrant
     restart: always
-    ports: !reset []      # internal — api hits qdrant:6333
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/127.0.0.1/6333' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - ragnet
 
-  clickhouse:
-    restart: always
-
-  minio:
-    restart: always
-    ports: !reset []      # internal — Traefik routes files.<domain> → minio:9000
-
+  # ── Logto OSS (self-hosted auth) ──
   logto:
+    image: svhd/logto:latest
+    container_name: agentic-rag-logto
     restart: always
-    ports: !reset []      # internal — Traefik routes auth.<domain> + auth-admin.<domain>
     environment:
-      ENDPOINT: ${LOGTO_ENDPOINT:?LOGTO_ENDPOINT must be set in prod (public URL)}
+      TRUST_PROXY_HEADER: "1"
+      PORT: "3001"
+      ADMIN_PORT: "3002"
+      DB_URL: ${LOGTO_DB_URL:?LOGTO_DB_URL must be set (RDS Postgres connection string)}
+      # AWS RDS uses an Amazon-issued cert chain Node doesn't trust by default.
+      # For stricter prod TLS, mount rds-combined-ca-bundle.pem and use
+      # ?sslmode=verify-ca&sslrootcert=... in LOGTO_DB_URL.
+      NODE_TLS_REJECT_UNAUTHORIZED: "0"
+      ENDPOINT: ${LOGTO_ENDPOINT:?LOGTO_ENDPOINT must be set (public URL behind Traefik)}
       ADMIN_ENDPOINT: ${LOGTO_ADMIN_ENDPOINT:?LOGTO_ADMIN_ENDPOINT must be set}
       SECRET_VAULT_KEK: ${LOGTO_SECRET_VAULT_KEK:?LOGTO_SECRET_VAULT_KEK must be set (openssl rand -base64 32)}
+    entrypoint: ["sh", "-c", "npm run cli db seed || true; npm start"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/oidc/.well-known/openid-configuration > /dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - ragnet
 
-  langfuse-web:
-    restart: always
-    ports: !reset []      # internal — Traefik routes traces.<domain> → langfuse-web:3000.
-                          # Stripping this is what frees host port 3000 for the Dokploy admin UI.
-    environment:
-      NEXTAUTH_URL: ${LANGFUSE_NEXTAUTH_URL:?LANGFUSE_NEXTAUTH_URL must be set (public URL)}
-      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:?LANGFUSE_NEXTAUTH_SECRET must be set}
-      SALT: ${LANGFUSE_SALT:?LANGFUSE_SALT must be set (openssl rand -hex 32)}
-      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:?LANGFUSE_ENCRYPTION_KEY must be set (openssl rand -hex 32)}
-      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:?LANGFUSE_PUBLIC_KEY must be set}
-      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_SECRET_KEY:?LANGFUSE_SECRET_KEY must be set}
-      LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD:?LANGFUSE_INIT_USER_PASSWORD must be set (admin password)}
-
-  langfuse-worker:
-    restart: always
-    environment:
-      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:?LANGFUSE_NEXTAUTH_SECRET must be set}
-      SALT: ${LANGFUSE_SALT:?LANGFUSE_SALT must be set}
-      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:?LANGFUSE_ENCRYPTION_KEY must be set}
-
+  # ── DB migrate (one-shot, alembic upgrade head against RDS) ──
   migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: agentic-rag-app:latest
+    container_name: agentic-rag-migrate
+    command: ["uv", "run", "alembic", "upgrade", "head"]
+    env_file: .env
     restart: "no"
-    # Runs `alembic upgrade head` against DATABASE_URL (RDS) once per deploy.
+    networks:
+      - ragnet
 
+  # ── FastAPI app ──
   api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: agentic-rag-app:latest
+    container_name: agentic-rag-api
     restart: always
-    ports: !reset []      # internal — Traefik routes api.<domain> → api:8000
-    # Use a named volume so user files persist across redeploys without
-    # depending on a host path. Dokploy will manage backups of the volume.
-    # NOTE: still kept as a temporary local cache because the worker reads
-    # the file path from Postgres for parsing. New uploads are also mirrored
-    # to MinIO so the browser can preview them via presigned URLs.
-    volumes:
-      - uploads_data:/app/data/uploads
-      - model_cache:/root/.cache
+    command: ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    env_file: .env
     environment:
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?OPENROUTER_API_KEY must be set}
-      LOGTO_ENDPOINT: ${LOGTO_ENDPOINT:?LOGTO_ENDPOINT must be set}
-      LOGTO_RESOURCE: ${LOGTO_RESOURCE:?LOGTO_RESOURCE must be set}
-      LANGFUSE_HOST: http://langfuse-web:3000     # internal — never public
-      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:?LANGFUSE_PUBLIC_KEY must be set}
-      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:?LANGFUSE_SECRET_KEY must be set}
-      # Object storage. S3_ENDPOINT_URL stays in-Docker (api → minio:9000);
-      # S3_PUBLIC_URL is what the BROWSER fetches presigned URLs from, so it
-      # must be the Traefik-fronted public hostname (e.g. https://files.brevit.ai).
+      # In-cluster service-name overrides for endpoints that differ from
+      # host-mode .env defaults.
+      REDIS_URL: redis://redis:6379
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      SEMANTIC_CACHE_REDIS_URL: redis://redis:6379/2
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: "6333"
+      LOGTO_INTERNAL_ENDPOINT: http://logto:3001
+      LANGFUSE_HOST: http://langfuse-web:3000
+      # S3_ENDPOINT_URL stays in-Docker; S3_PUBLIC_URL is what the BROWSER
+      # fetches presigned URLs from, so it must be the Traefik-fronted public
+      # hostname (e.g. https://files.your-domain.com).
       S3_ENDPOINT_URL: http://minio:9000
       S3_PUBLIC_URL: ${S3_PUBLIC_URL:?S3_PUBLIC_URL must be set (e.g. https://files.your-domain.com)}
       S3_ACCESS_KEY: ${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set}
       S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set (openssl rand -base64 24)}
-
-  worker:
-    restart: always
     volumes:
+      # Named volume — user files persist across redeploys without depending
+      # on a host bind path. Dokploy can back this up via the Volume Backups UI.
       - uploads_data:/app/data/uploads
       - model_cache:/root/.cache
+    depends_on:
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      logto:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/health\", timeout=3)'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - ragnet
+
+  # ── Celery worker ──
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: agentic-rag-app:latest
+    container_name: agentic-rag-worker
+    restart: always
+    command: ["uv", "run", "celery", "-A", "app.core.celery_app", "worker", "--loglevel=info"]
+    env_file: .env
     environment:
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?OPENROUTER_API_KEY must be set}
+      REDIS_URL: redis://redis:6379
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      SEMANTIC_CACHE_REDIS_URL: redis://redis:6379/2
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: "6333"
+      LOGTO_INTERNAL_ENDPOINT: http://logto:3001
       LANGFUSE_HOST: http://langfuse-web:3000
-      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:?LANGFUSE_PUBLIC_KEY must be set}
-      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:?LANGFUSE_SECRET_KEY must be set}
       S3_ENDPOINT_URL: http://minio:9000
       S3_PUBLIC_URL: ${S3_PUBLIC_URL:?S3_PUBLIC_URL must be set}
       S3_ACCESS_KEY: ${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set}
       S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set}
+    volumes:
+      - uploads_data:/app/data/uploads
+      - model_cache:/root/.cache
+    depends_on:
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - ragnet
+
+  # ── ClickHouse (Langfuse trace store) ──
+  clickhouse:
+    image: clickhouse/clickhouse-server
+    container_name: agentic-rag-clickhouse
+    restart: always
+    user: "101:101"
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - clickhouse_logs:/var/log/clickhouse-server
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - ragnet
+
+  # ── MinIO (S3-compatible blob store) ──
+  # Buckets:
+  #   documents → tenant PDFs (created by api at startup)
+  #   langfuse  → trace events + media (created here at boot)
+  minio:
+    image: minio/minio
+    container_name: agentic-rag-minio
+    restart: always
+    entrypoint: sh
+    command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set}
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - ragnet
+
+  # ── Langfuse worker (event ingestion / scoring) ──
+  langfuse-worker:
+    image: langfuse/langfuse-worker:3
+    container_name: agentic-rag-langfuse-worker
+    restart: always
+    depends_on:
+      redis:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment: &langfuse_environment
+      DATABASE_URL: ${LANGFUSE_DATABASE_URL:?LANGFUSE_DATABASE_URL must be set}
+      NODE_TLS_REJECT_UNAUTHORIZED: "0"
+      SALT: ${LANGFUSE_SALT:?LANGFUSE_SALT must be set (openssl rand -hex 32)}
+      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:?LANGFUSE_ENCRYPTION_KEY must be set (openssl rand -hex 32)}
+      TELEMETRY_ENABLED: "true"
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "false"
+      CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
+      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse
+      CLICKHOUSE_CLUSTER_ENABLED: "false"
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set}
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set}
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://minio:9000
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
+      LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
+      LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set}
+      LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set}
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://minio:9000
+      LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: media/
+      LANGFUSE_S3_BATCH_EXPORT_ENABLED: "false"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_AUTH: ""
+      REDIS_TLS_ENABLED: "false"
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:?LANGFUSE_NEXTAUTH_SECRET must be set}
+      NEXTAUTH_URL: ${LANGFUSE_NEXTAUTH_URL:?LANGFUSE_NEXTAUTH_URL must be set (public URL)}
+    networks:
+      - ragnet
+
+  # ── Langfuse web (UI + ingest API) ──
+  langfuse-web:
+    image: langfuse/langfuse:3
+    container_name: agentic-rag-langfuse-web
+    restart: always
+    depends_on:
+      redis:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment:
+      <<: *langfuse_environment
+      # Auto-onboard org/project/admin user on first start so we don't have
+      # to click through the UI to mint API keys.
+      LANGFUSE_INIT_ORG_ID: ${LANGFUSE_INIT_ORG_ID:-agentic-rag-prod}
+      LANGFUSE_INIT_ORG_NAME: ${LANGFUSE_INIT_ORG_NAME:-Agentic RAG}
+      LANGFUSE_INIT_PROJECT_ID: ${LANGFUSE_INIT_PROJECT_ID:-agentic-rag}
+      LANGFUSE_INIT_PROJECT_NAME: ${LANGFUSE_INIT_PROJECT_NAME:-agentic-rag}
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:?LANGFUSE_PUBLIC_KEY must be set}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_SECRET_KEY:?LANGFUSE_SECRET_KEY must be set}
+      LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_USER_EMAIL:?LANGFUSE_INIT_USER_EMAIL must be set}
+      LANGFUSE_INIT_USER_NAME: ${LANGFUSE_INIT_USER_NAME:-Admin}
+      LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD:?LANGFUSE_INIT_USER_PASSWORD must be set}
+    networks:
+      - ragnet
 
 volumes:
+  redis_data:
+  qdrant_data:
+  model_cache:
+  clickhouse_data:
+  clickhouse_logs:
+  minio_data:
   uploads_data:
+
+networks:
+  ragnet:
+    driver: bridge
