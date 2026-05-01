@@ -23,6 +23,10 @@ from app.core.qdrant_client import collection_name_for, get_async_qdrant_client
 from app.db import crud
 from app.db.models import Document
 from app.db.session import get_session
+from app.storage.s3_client import (
+    delete_document as s3_delete_document,
+    presigned_document_url,
+)
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -106,6 +110,45 @@ async def list_documents(
     )
 
 
+class DocumentUrlOut(BaseModel):
+    url: str
+    expires_in_seconds: int
+
+
+@router.get(
+    "/{document_id}/url",
+    response_model=DocumentUrlOut,
+    summary="Get a short-lived presigned URL to view/download the original PDF",
+)
+async def get_document_url(
+    document_id: uuid.UUID,
+    inline: bool = True,
+    auth: AuthInfo = Depends(require_auth),
+    db: AsyncSession = Depends(get_session),
+) -> DocumentUrlOut:
+    if not auth.organization_id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "No active org")
+
+    doc = (
+        await db.execute(
+            select(Document).where(
+                Document.id == document_id,
+                Document.tenant_id == auth.organization_id,
+                Document.is_active.is_(True),
+            )
+        )
+    ).scalar_one_or_none()
+    if doc is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Document not found")
+
+    from app.core.config import settings as _settings
+
+    url = await presigned_document_url(
+        auth.organization_id, str(doc.id), filename=doc.filename, inline=inline
+    )
+    return DocumentUrlOut(url=url, expires_in_seconds=_settings.S3_PRESIGN_TTL_SECONDS)
+
+
 @router.delete("/{document_id}", summary="Soft-delete a document")
 async def delete_document(
     document_id: uuid.UUID,
@@ -158,5 +201,8 @@ async def delete_document(
             os.remove(doc.file_path)
         except OSError:
             pass
+
+    # Drop the S3/MinIO copy too so the bucket doesn't accumulate orphans.
+    await s3_delete_document(auth.organization_id, str(doc.id))
 
     return {"status": "deleted", "id": str(doc.id)}

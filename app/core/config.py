@@ -75,6 +75,18 @@ class Settings(BaseSettings):
     QDRANT_HOST: str = "qdrant"
     QDRANT_PORT: int = 6333
 
+    # ── Object storage (S3-compatible: MinIO in dev, AWS S3 in prod) ─────
+    # Used for serving uploaded PDFs to the browser via presigned URLs.
+    # In Docker the api/worker reach MinIO at http://minio:9000; the browser
+    # gets URLs pointing at S3_PUBLIC_URL (host-side: http://localhost:9090).
+    S3_ENDPOINT_URL: str = "http://minio:9000"
+    S3_PUBLIC_URL: str = "http://localhost:9090"
+    S3_REGION: str = "us-east-1"
+    S3_ACCESS_KEY: str = "minio"
+    S3_SECRET_KEY: str = "miniosecret"
+    S3_DOCUMENTS_BUCKET: str = "agentic-rag-documents"
+    S3_PRESIGN_TTL_SECONDS: int = 900  # 15 min — same default boto3 uses
+
     # ── Agent tuning ───────────────────────────────────────
     CONTEXT_SCORE_THRESHOLD: int = Field(default=7, ge=0, le=10)
     MAX_RETRIEVAL_ITERATIONS: int = Field(default=3, ge=1)

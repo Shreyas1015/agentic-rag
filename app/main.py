@@ -1,3 +1,6 @@
+import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -12,8 +15,23 @@ from app.api import (
     usage,
 )
 from app.core.config import settings
+from app.storage.s3_client import ensure_bucket as ensure_documents_bucket
 
-app = FastAPI(title=settings.APP_NAME, debug=settings.DEBUG)
+log = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # Ensure the S3/MinIO documents bucket exists before serving any
+    # uploads. Failure here surfaces at boot rather than on first upload.
+    try:
+        await ensure_documents_bucket()
+    except Exception:
+        log.exception("Object storage init failed — uploads will return 5xx")
+    yield
+
+
+app = FastAPI(title=settings.APP_NAME, debug=settings.DEBUG, lifespan=lifespan)
 
 # CORS — the Next.js BFF proxies most calls server-side, but the SSE chat
 # stream is consumed directly from the browser through that same proxy, so

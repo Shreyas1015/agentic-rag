@@ -13,11 +13,16 @@ from celery.result import AsyncResult
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import logging
+
 from app.core.auth import require_tenant
 from app.core.celery_app import celery_app
 from app.db import crud
 from app.db.session import get_session
 from app.ingestion.tasks import ingest_document
+from app.storage.s3_client import upload_document
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
 
@@ -83,6 +88,17 @@ async def post_ingest(
     doc.file_path = str(file_path)
     await session.commit()
     await session.refresh(doc)
+
+    # ── Mirror upload to S3/MinIO so the browser can preview/download ──
+    # via presigned URLs. Worker still reads from disk for parsing — we
+    # keep both copies for now to avoid changing the worker contract.
+    # If S3 is misconfigured we log + continue: the doc is still ingestible,
+    # just not previewable. Re-upload from /documents/{id}/repair would
+    # heal it (out of scope here).
+    try:
+        await upload_document(tenant_id, str(doc.id), file_bytes)
+    except Exception:
+        log.exception("S3 upload failed for %s — preview link will 404", doc.id)
 
     # ── Dispatch Celery task ──────────────────────────────
     async_result = ingest_document.apply_async(
