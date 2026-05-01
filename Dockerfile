@@ -35,8 +35,30 @@ WORKDIR /app
 # BuildKit cache mount keeps uv's download cache between builds — first build
 # pulls from PyPI, subsequent builds reuse the local cache.
 COPY pyproject.toml uv.lock .python-version ./
+
+# ---------- CPU-only build (default) ----------
+# The lockfile resolves torch with full GPU/NVIDIA deps (~2.6 GB).  On a
+# CPU-only server we must NEVER download those packages — the disk fills up.
+#
+# Strategy (CPU path):
+#   1. Export the lockfile to requirements.txt
+#   2. Strip out nvidia-*, triton, cuda-* lines
+#   3. Install everything with the PyTorch CPU-only wheel index
+#
+# Set INSTALL_GPU=1 at build time to keep the full GPU stack.
+ARG INSTALL_GPU=0
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-install-project
+    if [ "$INSTALL_GPU" = "1" ]; then \
+        uv sync --frozen --no-dev --no-install-project ; \
+    else \
+        uv venv .venv && \
+        uv export --frozen --no-dev --no-emit-project -o /tmp/requirements.txt && \
+        sed -i '/^nvidia-/d; /^triton/d; /^cuda-bindings/d; /^cuda-pathfinder/d; /^cuda-toolkit/d' /tmp/requirements.txt && \
+        uv pip install -r /tmp/requirements.txt \
+            --index-url https://download.pytorch.org/whl/cpu \
+            --extra-index-url https://pypi.org/simple && \
+        rm /tmp/requirements.txt ; \
+    fi
 
 # Copy app source.
 COPY app ./app
