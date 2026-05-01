@@ -2,52 +2,48 @@ name: agentic-rag
 
 # Production overlay. Apply with:
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# (Dokploy can take both files via its compose-template UI.)
+#
+# Architecture in prod:
+#   - Postgres lives on AWS RDS (no container — DATABASE_URL points at it).
+#   - Logto data lives on RDS, Langfuse data lives on RDS.
+#   - Object storage (PDF previews) lives in MinIO inside the stack OR a
+#     real AWS S3 bucket — code is identical, env vars decide.
+#   - Traefik (managed by Dokploy) terminates TLS and routes by Host header.
+#     Nothing in this compose binds to a host port — Dokploy injects
+#     Traefik labels per service when you map a domain in its UI.
 #
 # What this overlay changes vs the base dev compose:
-#   - Removes host port mappings from internal-only services (postgres,
-#     redis, qdrant, clickhouse, minio API, langfuse-worker). Only api,
-#     logto, and langfuse-web stay public — everything else is reachable
-#     only on the docker network. Dokploy's reverse proxy (Traefik) is
-#     expected to terminate TLS in front of the public services.
-#   - `restart: always` everywhere (Dokploy default).
-#   - Drops the bind mount on data/uploads — uses a named volume
-#     `uploads_data` instead so a clean redeploy keeps user files.
-#   - All Langfuse / Logto secrets are MANDATORY (`${VAR:?...}`) so
+#   - `restart: always` on every long-running service.
+#   - All host port mappings stripped (`ports: !reset []`). The base file
+#     only exposes ports for local dev; prod traffic comes through Traefik.
+#   - `data/uploads` becomes a named volume so user files survive redeploys
+#     without depending on a bind path on the EC2 host.
+#   - All Logto / Langfuse / S3 secrets are MANDATORY (`${VAR:?...}`) so
 #     `docker compose config` fails loudly if a required secret is unset.
-#   - Public URLs (LOGTO_ENDPOINT, LANGFUSE_HOST, NEXTAUTH_URL) come from
-#     env, not localhost defaults — set them per Dokploy domain.
+#   - Public URLs (LOGTO_ENDPOINT, LANGFUSE_NEXTAUTH_URL, S3_PUBLIC_URL)
+#     come from env — never localhost defaults.
 
 services:
 
-  postgres:
-    restart: always
-    ports: !reset []      # internal only
-
   redis:
     restart: always
-    ports: !reset []      # internal only
+    ports: !reset []      # internal — workers reach redis:6379
 
   qdrant:
     restart: always
-    ports: !reset []      # internal only — api hits qdrant:6333 inside docker
+    ports: !reset []      # internal — api hits qdrant:6333
 
   clickhouse:
     restart: always
-    ports: !reset []
 
   minio:
     restart: always
-    ports: !reset []
-
-  logto-db-create:
-    restart: "no"
-
-  langfuse-db-create:
-    restart: "no"
+    ports: !reset []      # internal — Traefik routes files.<domain> → minio:9000
 
   logto:
     restart: always
-    # In prod, ENDPOINT must be the public URL behind Traefik.
+    ports: !reset []      # internal — Traefik routes auth.<domain> + auth-admin.<domain>
     environment:
       ENDPOINT: ${LOGTO_ENDPOINT:?LOGTO_ENDPOINT must be set in prod (public URL)}
       ADMIN_ENDPOINT: ${LOGTO_ADMIN_ENDPOINT:?LOGTO_ADMIN_ENDPOINT must be set}
@@ -55,6 +51,8 @@ services:
 
   langfuse-web:
     restart: always
+    ports: !reset []      # internal — Traefik routes traces.<domain> → langfuse-web:3000.
+                          # Stripping this is what frees host port 3000 for the Dokploy admin UI.
     environment:
       NEXTAUTH_URL: ${LANGFUSE_NEXTAUTH_URL:?LANGFUSE_NEXTAUTH_URL must be set (public URL)}
       NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:?LANGFUSE_NEXTAUTH_SECRET must be set}
@@ -73,11 +71,16 @@ services:
 
   migrate:
     restart: "no"
+    # Runs `alembic upgrade head` against DATABASE_URL (RDS) once per deploy.
 
   api:
     restart: always
+    ports: !reset []      # internal — Traefik routes api.<domain> → api:8000
     # Use a named volume so user files persist across redeploys without
     # depending on a host path. Dokploy will manage backups of the volume.
+    # NOTE: still kept as a temporary local cache because the worker reads
+    # the file path from Postgres for parsing. New uploads are also mirrored
+    # to MinIO so the browser can preview them via presigned URLs.
     volumes:
       - uploads_data:/app/data/uploads
       - model_cache:/root/.cache
@@ -88,6 +91,13 @@ services:
       LANGFUSE_HOST: http://langfuse-web:3000     # internal — never public
       LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:?LANGFUSE_PUBLIC_KEY must be set}
       LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:?LANGFUSE_SECRET_KEY must be set}
+      # Object storage. S3_ENDPOINT_URL stays in-Docker (api → minio:9000);
+      # S3_PUBLIC_URL is what the BROWSER fetches presigned URLs from, so it
+      # must be the Traefik-fronted public hostname (e.g. https://files.brevit.ai).
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_PUBLIC_URL: ${S3_PUBLIC_URL:?S3_PUBLIC_URL must be set (e.g. https://files.your-domain.com)}
+      S3_ACCESS_KEY: ${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set}
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set (openssl rand -base64 24)}
 
   worker:
     restart: always
@@ -99,6 +109,10 @@ services:
       LANGFUSE_HOST: http://langfuse-web:3000
       LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:?LANGFUSE_PUBLIC_KEY must be set}
       LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:?LANGFUSE_SECRET_KEY must be set}
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_PUBLIC_URL: ${S3_PUBLIC_URL:?S3_PUBLIC_URL must be set}
+      S3_ACCESS_KEY: ${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set}
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set}
 
 volumes:
   uploads_data:
