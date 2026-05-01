@@ -130,6 +130,24 @@ async def fetch_parent_chunks(
     return list((await session.execute(stmt)).scalars().all())
 
 
+async def active_document_ids_for_tenant(
+    session: AsyncSession, *, tenant_id: str
+) -> list[str]:
+    """All distinct document_ids that have active parent_chunks for the
+    tenant. Used by the post-ingest consistency check to compare against
+    what Qdrant actually has indexed."""
+    stmt = (
+        select(ParentChunk.document_id)
+        .where(
+            ParentChunk.tenant_id == tenant_id,
+            ParentChunk.is_active.is_(True),
+        )
+        .distinct()
+    )
+    rows = (await session.execute(stmt)).all()
+    return [str(r[0]) for r in rows]
+
+
 async def estimate_tenant_token_count(
     session: AsyncSession, *, tenant_id: str
 ) -> int:

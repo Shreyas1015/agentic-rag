@@ -5,28 +5,28 @@
       "id": "resume-name",
       "query": "What is the candidate's name on the software engineer resume?",
       "expected_answer": "Shreyas Gurav",
-      "expected_filenames": ["Software_Engineer_Shreyas_Gurav__.pdf"],
+      "expected_filenames": ["Hemut_Software_Engineer_Shreyas_Gurav.pdf"],
       "expected_pages": [1]
     },
     {
       "id": "resume-role",
       "query": "What role is the candidate applying for?",
       "expected_answer": "Software Engineer",
-      "expected_filenames": ["Software_Engineer_Shreyas_Gurav__.pdf"],
+      "expected_filenames": ["Hemut_Software_Engineer_Shreyas_Gurav.pdf"],
       "expected_pages": [1]
     },
     {
       "id": "resume-skills",
       "query": "What programming languages does the candidate know?",
       "expected_answer": "Python",
-      "expected_filenames": ["Software_Engineer_Shreyas_Gurav__.pdf"],
+      "expected_filenames": ["Hemut_Software_Engineer_Shreyas_Gurav.pdf"],
       "expected_pages": [1, 2]
     },
     {
       "id": "resume-education",
       "query": "Where did the candidate study?",
       "expected_answer": "",
-      "expected_filenames": ["Software_Engineer_Shreyas_Gurav__.pdf"],
+      "expected_filenames": ["Hemut_Software_Engineer_Shreyas_Gurav.pdf"],
       "expected_pages": [1, 2]
     },
     {
@@ -62,7 +62,7 @@
       "query": "Summarise the two documents I have uploaded.",
       "expected_answer": "",
       "expected_filenames": [
-        "Software_Engineer_Shreyas_Gurav__.pdf",
+        "Hemut_Software_Engineer_Shreyas_Gurav.pdf",
         "Backend Multi-Tenant Implementation _ February 17 – March 10 (21 Days).pdf"
       ],
       "expected_pages": [1]
@@ -72,7 +72,7 @@
       "query": "Compare the candidate's skills against the technologies mentioned in the backend implementation plan.",
       "expected_answer": "",
       "expected_filenames": [
-        "Software_Engineer_Shreyas_Gurav__.pdf",
+        "Hemut_Software_Engineer_Shreyas_Gurav.pdf",
         "Backend Multi-Tenant Implementation _ February 17 – March 10 (21 Days).pdf"
       ],
       "expected_pages": [1]

@@ -18,10 +18,11 @@ recommend --pool=solo for dev (see app/core/celery_app.py module docstring).
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 
 from app.core.celery_app import celery_app
-from app.core.qdrant_client import collection_name_for
+from app.core.qdrant_client import collection_name_for, ensure_tenant_collection
 from app.db import crud
 from app.db.session import async_session_maker
 from app.ingestion.chunker import hierarchical_chunk
@@ -32,6 +33,8 @@ from app.ingestion.upserter import (
     count_active_for_document,
     upsert_to_qdrant,
 )
+
+log = logging.getLogger(__name__)
 
 
 @celery_app.task(name="ingestion.ping")
@@ -161,6 +164,11 @@ async def _ingest_async(
     document_id: str,
     doc_type: str | None,
 ) -> dict:
+    # 0. Ensure the tenant's Qdrant collection exists. Idempotent. Without
+    #    this, a missing collection used to cause Postgres rows to be
+    #    written and then Qdrant upsert to 404, leaving an orphaned doc.
+    ensure_tenant_collection(tenant_id)
+
     # 1. Parse PDF (Docling -> per-page text + tables-as-markdown).
     pages = parse_pdf(file_path)
 
@@ -207,10 +215,32 @@ async def _ingest_async(
             f"Post-upsert count mismatch for {document_id}: expected={len(children)} got={actual}"
         )
 
+    # 7. Tenant-aggregate consistency check. For every active document in
+    #    Postgres, confirm Qdrant has at least one point. Catches drift from
+    #    earlier failed/orphaned ingests (Postgres written, Qdrant skipped).
+    #    Logged but non-fatal — the current ingest succeeded; the operator
+    #    decides whether to re-ingest the orphans.
+    orphans: list[str] = []
+    async with async_session_maker() as session:
+        all_doc_ids = await crud.active_document_ids_for_tenant(
+            session, tenant_id=tenant_id
+        )
+    for did in all_doc_ids:
+        if count_active_for_document(collection, did) == 0:
+            orphans.append(did)
+    if orphans:
+        log.warning(
+            "tenant_consistency_check tenant=%s orphaned_document_ids=%s — "
+            "Postgres has parent_chunks but Qdrant has 0 active points. "
+            "Re-upload these docs to restore RAG retrieval.",
+            tenant_id, orphans,
+        )
+
     return {
         "pages": len(pages),
         "parents": len(parents),
         "children": len(children),
         "qdrant": actual,
         "upserted": upserted,
+        "tenant_orphans": orphans,
     }
