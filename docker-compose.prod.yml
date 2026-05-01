@@ -90,7 +90,8 @@ services:
     image: agentic-rag-app:latest
     container_name: agentic-rag-migrate
     command: ["uv", "run", "alembic", "upgrade", "head"]
-    env_file: .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set}
     restart: "no"
     networks:
       - ragnet
@@ -104,7 +105,6 @@ services:
     container_name: agentic-rag-api
     restart: always
     command: ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
-    env_file: .env
     environment:
       # In-cluster service-name overrides for endpoints that differ from
       # host-mode .env defaults.
@@ -155,7 +155,6 @@ services:
     container_name: agentic-rag-worker
     restart: always
     command: ["uv", "run", "celery", "-A", "app.core.celery_app", "worker", "--loglevel=info"]
-    env_file: .env
     environment:
       REDIS_URL: redis://redis:6379
       CELERY_BROKER_URL: redis://redis:6379/0
